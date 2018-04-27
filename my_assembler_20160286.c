@@ -355,12 +355,18 @@ static int assem_pass1(void)
 	for (int i = 1; i < token_line; i++)
 	{
 
-		if (token_table[i] != NULL && !strcmp(token_table[i]->operator, "CSECT"))
+		if (!strcmp(token_table[i]->operator, "CSECT"))
 			locctr = 0;
 
-		if (token_table[i] != NULL)
-			insert_symbol(token_table[i]);/////////////////////////////////////////////////////////
+		insert_symbol(token_table[i]);/////////////////////////////////////////////////////////
 
+		if (token_table[i]->operand[0] != NULL && strstr(token_table[i]->operand[0], "="))
+			insert_literal_littab(token_table[i]->operand[0]);
+
+		if (!strcmp(token_table[i]->operator, "LTORG") || !strcmp(token_table[i]->operator,"END"))
+		{
+			insert_addr_littab();
+		}
 	}
 
 	return 0;
@@ -505,7 +511,6 @@ void freeAll(void) {
 }
 
 
-
 /* --------------------------------------------------------------------------------*
 * ------------------------- 추후 프로젝트에서 사용할 함수 --------------------------*
 * --------------------------------------------------------------------------------*/
@@ -548,31 +553,29 @@ void insert_symbol(token * inputToken)
 		sym_num++;
 	}
 
-	op_index = search_opcode(inputToken->operator);
+	increase_locctr(inputToken);
+}
 
-	if (op_index >= 0)
-	{
-		locctr += inst_table[op_index]->form;
+void insert_literal_littab(char * input_literal)
+{
+	char data[255];
+	char data_type;
+	char *ptr;
 
-		if (strstr(inputToken->operator, "+") && inst_table[op_index]->form == 3)
-			locctr++;
-	}
-	else if (!strcmp(inputToken->operator, "RESW"))
+	strcpy(data, input_literal);
+
+	if (data[0] == '=')
+		ptr = strtok(data, "=");
+
+	for (int i = lit_index; i < lit_num; i++)
 	{
-		locctr += atoi(inputToken->operand[0]) * 3;
+		if (!strcmp(lit_table[i].literal, ptr))
+			return;
 	}
-	else if (!strcmp(inputToken->operator, "RESB"))
-	{
-		locctr += atoi(inputToken->operand[0]);
-	}
-	else if (!strcmp(inputToken->operator, "BYTE"))
-	{
-		locctr ++;
-	}
-	else if (!strcmp(inputToken->operator, "WORD"))
-	{
-		locctr += 3;
-	}
+
+	strcpy(lit_table[lit_num].literal, ptr);
+
+	lit_num++;
 }
 
 int operate_address(char * input_operand)
@@ -604,6 +607,61 @@ int search_symbol_address(char * symbol)
 	return -1;
 }
 
+void increase_locctr(token * inputToken)
+{
+	int op_index = search_opcode(inputToken->operator);
+
+	if (op_index >= 0)
+	{
+		locctr += inst_table[op_index]->form;
+
+		if (strstr(inputToken->operator, "+") && inst_table[op_index]->form == 3)
+			locctr++;
+	}
+	else if (!strcmp(inputToken->operator, "RESW"))
+	{
+		locctr += atoi(inputToken->operand[0]) * 3;
+	}
+	else if (!strcmp(inputToken->operator, "RESB"))
+	{
+		locctr += atoi(inputToken->operand[0]);
+	}
+	else if (!strcmp(inputToken->operator, "BYTE"))
+	{
+		locctr++;
+	}
+	else if (!strcmp(inputToken->operator, "WORD"))
+	{
+		locctr += 3;
+	}
+}
+
+void insert_addr_littab()
+{
+	char lit_input[20];
+	char lit_type;
+	char *lit_data;
+
+	for (int i = lit_index; i < lit_num; i++)
+	{
+		lit_table[i].addr = locctr;
+		strcpy(lit_input, lit_table[i].literal);
+		lit_type = lit_input[0];
+		lit_data = strtok(lit_input, "'");
+		lit_data = strtok(NULL, "'");
+
+		if (lit_type == 'C')
+		{
+			locctr += strlen(lit_data);
+		}
+		else if (lit_type == 'X')
+		{
+			locctr++;
+		}
+	}
+
+	lit_index = lit_num;
+}
 
 /* ----------------------------------------------------------------------------------
 * 설명 : 어셈블리 코드를 기계어 코드로 바꾸기 위한 패스2 과정을 수행하는 함수이다.

@@ -64,6 +64,16 @@ symbol sym_table[MAX_LINES];
 
 static int sym_num; ////////
 
+struct literal_unit {
+	char literal[20];
+	int addr;
+};
+
+typedef struct literal_unit literal;
+literal lit_table[MAX_LINES];
+static int lit_num;
+static int lit_index;
+
 static int locctr;
 
 //--------------
@@ -85,6 +95,9 @@ void make_symtab_output(char *file_name);
 void insert_symbol(token *inputToken);
 int operate_address(char * input_operand);
 int search_symbol_address(char * symbol);
+void insert_literal_littab(char * input_literal);
+void increase_locctr(token * inputToken);
+void insert_addr_littab();
 
 /* 추후 프로젝트에서 사용하게 되는 함수*/
 static int assem_pass2(void);

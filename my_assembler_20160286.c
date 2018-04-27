@@ -49,8 +49,9 @@ int main(int args, char *arg[])
 	//make_opcode_output(NULL);
 
 	make_symtab_output("symtab_20160286");
-	/*
+	
 	assem_pass2();
+	/*
 	make_objectcode_output("output_20160286");
 	*/
 
@@ -222,6 +223,7 @@ int token_parsing(char *str)
 	for (int i = 0; i < MAX_OPERAND; i++)
 		token_table[token_line]->operand[i] = NULL;
 	token_table[token_line]->comment = NULL;
+	token_table[token_line]->nixbpe = 0;
 
 	line = strtok(input, "\t\n");  // 탭과 개행을 기준으로 문자열을 분리하여 차례로 가져옴
 
@@ -241,6 +243,15 @@ int token_parsing(char *str)
 		// 구조체 내부에 레이블 저장하는 변수 동적 할당 후, line에 담긴 operator 정보를 구조체 내부에 저장
 		token_table[token_line]->operator = malloc(sizeof(char) * 30);
 		strcpy(token_table[token_line]->operator, line);
+
+		if (op_index >= 0 && inst_table[op_index]->form != 2)
+		{
+			if (line[0] == '+')
+				token_table[token_line]->nixbpe |= E_NIXBPE;
+			else
+				token_table[token_line]->nixbpe |= P_NIXBPE;
+		}
+
 		line = strtok(NULL, "\t\n");  // 다음 저장할 문자열을 가져옴
 	}
 	else  // 다음 저장할 문자열이 없는 경우 함수 종료
@@ -267,6 +278,26 @@ int token_parsing(char *str)
 				token_table[token_line]->operand[j] = malloc(sizeof(char) * 256);
 				strcpy(token_table[token_line]->operand[j], operand);
 				operand = strtok(NULL, ",");
+			}
+
+			if (op_index >= 0 && inst_table[op_index]->form != 2)
+			{
+				if ((token_table[token_line]->operand[1]!= NULL) && (!strcmp(token_table[token_line]->operand[1], "X")))
+				{
+					token_table[token_line]->nixbpe |= X_NIXBPE;
+				}
+				if (strstr(token_table[token_line]->operand[0], "@"))
+				{
+					token_table[token_line]->nixbpe |= N_NIXBPE;
+				}
+				else if (strstr(token_table[token_line]->operand[0], "#"))
+				{
+					token_table[token_line]->nixbpe |= I_NIXBPE;
+				}
+				else
+				{
+					token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
+				}
 			}
 		}
 
@@ -471,7 +502,7 @@ void make_opcode_output(char *file_name)
 	if(file != NULL)
 		fclose(file);  // 연 파일을 닫음
 
-	freeAll();  // 메모리 동적할당 모두 반환
+	//freeAll();  // 메모리 동적할당 모두 반환
 }
 
 // 메모리 동적할당 모두 반환하는 함수
@@ -607,6 +638,18 @@ int search_symbol_address(char * symbol)
 	return -1;
 }
 
+int search_lit_address(char * literal)
+{
+	if (literal[0] == '=')
+		literal++;
+
+	for (int i = 0; i < lit_num; i++)
+		if (!strcmp(lit_table[i].literal, literal))
+			return lit_table[i].addr;
+
+	return -1;
+}
+
 void increase_locctr(token * inputToken)
 {
 	int op_index = search_opcode(inputToken->operator);
@@ -636,7 +679,7 @@ void increase_locctr(token * inputToken)
 	}
 }
 
-void insert_addr_littab()
+void insert_addr_littab(void)
 {
 	char lit_input[20];
 	char lit_type;
@@ -675,9 +718,117 @@ void insert_addr_littab()
 */
 static int assem_pass2(void)
 {
-
 	/* add your code here */
+	int Program_cnt, Target_addr;
+	int obj_index = 0, op_index;
+	int opcode, r1, r2, xbpe, addr;
 
+	for (int i = 0; i < token_line; i++)
+	{
+		r1 = r2 = 0;
+		xbpe = 0;
+		addr = 0;
+		op_index = search_opcode(token_table[i]->operator);
+
+		if (op_index >= 0)
+		{
+			opcode = strtol(inst_table[op_index]->opcode, NULL, 16);
+
+			if (inst_table[op_index]->form == 2)
+			{
+
+				if (inst_table[op_index]->oprnd_num == 1)
+				{
+					if (!strcmp(token_table[i]->operand[0], "A"))
+						r1 = A_REGISTER;
+					else if(!strcmp(token_table[i]->operand[0], "X"))
+						r1 = X_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "L"))
+						r1 = L_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "S"))
+						r1 = S_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "T"))
+						r1 = T_REGISTER;
+					
+				}
+				else if (inst_table[op_index]->oprnd_num == 2)
+				{
+					if (!strcmp(token_table[i]->operand[0], "A"))
+						r1 = A_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "X"))
+						r1 = X_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "L"))
+						r1 = L_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "S"))
+						r1 = S_REGISTER;
+					else if (!strcmp(token_table[i]->operand[0], "T"))
+						r1 = T_REGISTER;
+
+					if (!strcmp(token_table[i]->operand[1], "A"))
+						r2 = A_REGISTER;
+					else if (!strcmp(token_table[i]->operand[1], "X"))
+						r2 = X_REGISTER;
+					else if (!strcmp(token_table[i]->operand[1], "L"))
+						r2 = L_REGISTER;
+					else if (!strcmp(token_table[i]->operand[1], "S"))
+						r2 = S_REGISTER;
+					else if (!strcmp(token_table[i]->operand[1], "T"))
+						r2 = T_REGISTER;
+				}
+
+				sprintf(object_codes[obj_index], "%x%d%d", opcode,r1,r2);
+				obj_index++;
+			}
+			else
+			{
+				if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
+				{
+					opcode += 2;
+				}
+
+				if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
+				{
+					opcode++;
+				}
+
+				if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
+				{
+					xbpe += 8;
+				}
+
+				if ((token_table[i]->nixbpe & B_NIXBPE) == B_NIXBPE)
+				{
+					xbpe += 4;
+				}
+
+				if ((token_table[i]->nixbpe & P_NIXBPE) == P_NIXBPE)
+				{
+					xbpe += 2;
+				}
+
+				if ((token_table[i]->nixbpe & E_NIXBPE) == E_NIXBPE)
+				{
+					xbpe += 1;
+				}
+
+				if (inst_table[op_index]->oprnd_num == 1)
+				{
+					addr = search_symbol_address(token_table[i]->operand[0]);
+				}
+				
+				sprintf(object_codes[obj_index], "%x%x", opcode,xbpe);
+				obj_index++;
+			}
+		}
+		else if (!strcmp(token_table[i]->operator, "LTORG"))
+		{
+
+		}
+		else if (!strcmp(token_table[i]->operator, "BYTE") && !strcmp(token_table[i]->operator, "WORD"))
+		{
+
+		}
+	}
 }
 
 /* ----------------------------------------------------------------------------------
@@ -694,4 +845,6 @@ void make_objectcode_output(char *file_name)
 {
 	/* add your code here */
 	
+
+	freeAll();
 }

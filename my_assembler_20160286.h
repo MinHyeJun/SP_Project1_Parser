@@ -6,6 +6,20 @@
 #define MAX_LINES 5000
 #define MAX_OPERAND 3
 
+#define A_REGISTER 0
+#define X_REGISTER 1
+#define L_REGISTER 2
+#define B_REGISTER 3
+#define S_REGISTER 4
+#define T_REGISTER 5
+
+#define N_NIXBPE 32
+#define I_NIXBPE 16
+#define X_NIXBPE 8
+#define B_NIXBPE 4
+#define P_NIXBPE 2
+#define E_NIXBPE 1
+
 /* 
  * instruction 목록 파일로 부터 정보를 받아와서 생성하는 구조체 변수이다.
  * 구조는 각자의 instruction set의 양식에 맞춰 직접 구현하되
@@ -74,6 +88,8 @@ literal lit_table[MAX_LINES];
 static int lit_num;
 static int lit_index;
 
+char object_codes[MAX_LINES][9];
+
 static int locctr;
 
 //--------------
@@ -95,9 +111,10 @@ void make_symtab_output(char *file_name);
 void insert_symbol(token *inputToken);
 int operate_address(char * input_operand);
 int search_symbol_address(char * symbol);
+int search_lit_address(char * literal);
 void insert_literal_littab(char * input_literal);
 void increase_locctr(token * inputToken);
-void insert_addr_littab();
+void insert_addr_littab(void);
 
 /* 추후 프로젝트에서 사용하게 되는 함수*/
 static int assem_pass2(void);

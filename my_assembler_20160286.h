@@ -91,6 +91,8 @@ static int lit_index;
 char object_codes[MAX_LINES][9];
 
 static int locctr;
+static int program_cnt;
+static int sub_prog_num;
 
 //--------------
 
@@ -115,6 +117,7 @@ int search_lit_address(char * literal);
 void insert_literal_littab(char * input_literal);
 void increase_locctr(token * inputToken);
 void insert_addr_littab(void);
+void address_to_array(short address, char * arr, int arr_num);
 
 /* 추후 프로젝트에서 사용하게 되는 함수*/
 static int assem_pass2(void);

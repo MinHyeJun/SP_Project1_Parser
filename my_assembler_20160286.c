@@ -293,12 +293,17 @@ int token_parsing(char *str)
 				else if (strstr(token_table[token_line]->operand[0], "#"))
 				{
 					token_table[token_line]->nixbpe |= I_NIXBPE;
+					token_table[token_line]->nixbpe ^= P_NIXBPE;
 				}
 				else
 				{
 					token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
 				}
 			}
+		}
+		else
+		{
+			token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
 		}
 
 		if (line != NULL)  // 다음 저장할 문자열이 있는 경우 line에 코멘트가 들어옴
@@ -376,7 +381,10 @@ static int assem_pass1(void)
 	}
 
 	if (token_table[0] != NULL && !strcmp(token_table[0]->operator,"START"))
+	{
 		locctr = atoi(token_table[0]->operand);
+		sub_prog_num = 0;
+	}
 	else
 		return -1;
 
@@ -387,7 +395,10 @@ static int assem_pass1(void)
 	{
 
 		if (!strcmp(token_table[i]->operator, "CSECT"))
+		{
 			locctr = 0;
+			sub_prog_num++;
+		}
 
 		insert_symbol(token_table[i]);/////////////////////////////////////////////////////////
 
@@ -559,8 +570,8 @@ void make_symtab_output(char *fileName)
 
 	for (int i = 0; i < sym_num; i++)
 	{
-		fprintf(file, "%s\t%x\n", sym_table[i].symbol, sym_table[i].addr);
-		printf("%s\t%x\n", sym_table[i].symbol, sym_table[i].addr);
+		fprintf(file, "%s\t%X\n", sym_table[i].symbol, sym_table[i].addr);
+		printf("%s\t%X\n", sym_table[i].symbol, sym_table[i].addr);
 	}
 }
 
@@ -631,9 +642,19 @@ int operate_address(char * input_operand)
 // 중복되는 심볼이 있을 경우 어느 프로그램 내에 있는 심볼을 가져올 것인지 파악해서 가져오는 코드 필요
 int search_symbol_address(char * symbol)
 {
+	int program_num = 0;
+
+	if (symbol[0] == '@')
+		symbol++;
+
 	for (int i = 0; i < sym_num; i++)
-		if (!strcmp(sym_table[i].symbol, symbol))
+	{
+		if (i != 0 && i != 1 && sym_table[i].addr == 0)
+			program_num++;
+
+		if (sub_prog_num == program_num && !strcmp(sym_table[i].symbol, symbol))
 			return sym_table[i].addr;
+	}
 
 	return -1;
 }
@@ -679,6 +700,35 @@ void increase_locctr(token * inputToken)
 	}
 }
 
+void increase_program_cnt(token * inputToken)
+{
+	int op_index = search_opcode(inputToken->operator);
+
+	if (op_index >= 0)
+	{
+		program_cnt += inst_table[op_index]->form;
+
+		if (strstr(inputToken->operator, "+") && inst_table[op_index]->form == 3)
+			program_cnt++;
+	}
+	else if (!strcmp(inputToken->operator, "RESW"))
+	{
+		program_cnt += atoi(inputToken->operand[0]) * 3;
+	}
+	else if (!strcmp(inputToken->operator, "RESB"))
+	{
+		program_cnt += atoi(inputToken->operand[0]);
+	}
+	else if (!strcmp(inputToken->operator, "BYTE"))
+	{
+		program_cnt++;
+	}
+	else if (!strcmp(inputToken->operator, "WORD"))
+	{
+		program_cnt += 3;
+	}
+}
+
 void insert_addr_littab(void)
 {
 	char lit_input[20];
@@ -706,6 +756,27 @@ void insert_addr_littab(void)
 	lit_index = lit_num;
 }
 
+void address_to_array(short address, char * arr, int arr_num)
+{
+	char temp[9];
+
+	if (address < 0)
+	{
+		sprintf(temp, "%0X", address);
+		for (int i = 0; i < arr_num+1; i++)
+		{
+			arr[i] = temp[strlen(temp) - arr_num + i];
+		}
+	}
+	else
+	{
+		if(arr_num == 3)
+			sprintf(arr, "%03X", address);
+		else if(arr_num == 5)
+			sprintf(arr, "%05X", address);
+	}
+}
+
 /* ----------------------------------------------------------------------------------
 * 설명 : 어셈블리 코드를 기계어 코드로 바꾸기 위한 패스2 과정을 수행하는 함수이다.
 *		   패스 2에서는 프로그램을 기계어로 바꾸는 작업은 라인 단위로 수행된다.
@@ -719,19 +790,50 @@ void insert_addr_littab(void)
 static int assem_pass2(void)
 {
 	/* add your code here */
-	int Program_cnt, Target_addr;
-	int obj_index = 0, op_index;
-	int opcode, r1, r2, xbpe, addr;
+	short target_addr;
+	int obj_index = 0, op_index, next_index;
+	int opcode, r1, r2, xbpe;
+	int lit_cnt = 0, ref_cnt;
+	char operand[255], output_addr[9], liter[20], *ptr;
+	char extref[3][20];
 
-	for (int i = 0; i < token_line; i++)
+	lit_index = 0;
+	sub_prog_num = 0;
+
+	for (int i = 1; i < token_line; i++)
 	{
+		ptr = NULL;
 		r1 = r2 = 0;
 		xbpe = 0;
-		addr = 0;
+		target_addr = 0;
 		op_index = search_opcode(token_table[i]->operator);
+
+		if (!strcmp(token_table[i]->operator,"CSECT"))
+		{
+			program_cnt = 0;
+			sub_prog_num++;
+			obj_index++;
+		}
+		else if (!strcmp(token_table[i]->operator,"EXTREF"))
+		{
+			for (ref_cnt = 0; token_table[i]->operand[ref_cnt] != NULL; ref_cnt++)
+				strcpy(extref[ref_cnt], token_table[i]->operand[ref_cnt]);
+
+			ref_cnt;
+		}
 
 		if (op_index >= 0)
 		{
+			for (int j = i + 1; j < token_line; j++)
+			{
+				if (search_opcode(token_table[j]->operator) >= 0
+					|| (!strcmp(token_table[j]->operator, "RESW")) || (!strcmp(token_table[j]->operator, "RESB"))
+					|| (!strcmp(token_table[j]->operator, "WORD")) || (!strcmp(token_table[j]->operator, "BYTE")))
+				{
+					increase_program_cnt(token_table[i]);
+					break;
+				}
+			}
 			opcode = strtol(inst_table[op_index]->opcode, NULL, 16);
 
 			if (inst_table[op_index]->form == 2)
@@ -741,7 +843,7 @@ static int assem_pass2(void)
 				{
 					if (!strcmp(token_table[i]->operand[0], "A"))
 						r1 = A_REGISTER;
-					else if(!strcmp(token_table[i]->operand[0], "X"))
+					else if (!strcmp(token_table[i]->operand[0], "X"))
 						r1 = X_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "L"))
 						r1 = L_REGISTER;
@@ -749,7 +851,7 @@ static int assem_pass2(void)
 						r1 = S_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "T"))
 						r1 = T_REGISTER;
-					
+
 				}
 				else if (inst_table[op_index]->oprnd_num == 2)
 				{
@@ -776,59 +878,168 @@ static int assem_pass2(void)
 						r2 = T_REGISTER;
 				}
 
-				sprintf(object_codes[obj_index], "%x%d%d", opcode,r1,r2);
+				sprintf(object_codes[obj_index], "%02X%d%d", opcode, r1, r2);
 				obj_index++;
 			}
 			else
 			{
-				if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
-				{
-					opcode += 2;
-				}
-
-				if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
-				{
-					opcode++;
-				}
-
-				if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
-				{
-					xbpe += 8;
-				}
-
-				if ((token_table[i]->nixbpe & B_NIXBPE) == B_NIXBPE)
-				{
-					xbpe += 4;
-				}
-
-				if ((token_table[i]->nixbpe & P_NIXBPE) == P_NIXBPE)
-				{
-					xbpe += 2;
-				}
-
-				if ((token_table[i]->nixbpe & E_NIXBPE) == E_NIXBPE)
-				{
-					xbpe += 1;
-				}
-
 				if (inst_table[op_index]->oprnd_num == 1)
 				{
-					addr = search_symbol_address(token_table[i]->operand[0]);
+					strcpy(operand, token_table[i]->operand[0]);
+					if (operand[0] == '#')
+					{
+						ptr = strtok(operand, "#");
+						target_addr = atoi(ptr);
+					}
+					else
+					{
+						int j;
+						for (j = 0; j < ref_cnt; j++)
+						{
+							if (extref[j] != NULL && !strcmp(operand, extref[j]))
+								break;
+						}
+						if (j < ref_cnt)
+						{
+							target_addr = 0;
+						}
+						else if (search_symbol_address(operand) >= 0)
+						{
+							target_addr = search_symbol_address(operand);
+						}
+						else if (search_lit_address(operand) >= 0)
+						{
+							target_addr = search_lit_address(operand);
+							
+							int k;
+
+							for (k = 0; k < lit_index + lit_cnt; k++)
+							{
+								if (!strcmp(lit_table[k].literal, operand + 1))
+									break;
+							}
+							if (k >= lit_index + lit_cnt)
+								lit_cnt++;
+						}
+						else
+							target_addr = 0;
+					}
+
+					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
+					{
+						opcode += 2;
+					}
+
+					if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
+					{
+						opcode++;
+					}
+
+					if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
+					{
+						xbpe += 8;
+					}
+
+					if ((token_table[i]->nixbpe & B_NIXBPE) == B_NIXBPE)
+					{
+						xbpe += 4;
+					}
+
+					if ((token_table[i]->nixbpe & P_NIXBPE) == P_NIXBPE)
+					{
+						xbpe += 2;
+						target_addr -= program_cnt;
+					}
+
+					if ((token_table[i]->nixbpe & E_NIXBPE) == E_NIXBPE)
+					{
+						xbpe += 1;
+						address_to_array(target_addr, output_addr, 5);
+					}
+					else
+						address_to_array(target_addr, output_addr, 3);
 				}
-				
-				sprintf(object_codes[obj_index], "%x%x", opcode,xbpe);
+				else
+				{
+					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
+					{
+						opcode += 2;
+					}
+
+					if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
+					{
+						opcode++;
+					}
+
+					if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
+					{
+						xbpe += 8;
+					}
+
+					address_to_array(target_addr, output_addr, 3);
+				}
+
+				sprintf(object_codes[obj_index], "%02X%X%s", opcode, xbpe, output_addr);
 				obj_index++;
 			}
 		}
-		else if (!strcmp(token_table[i]->operator, "LTORG"))
+		else if (!strcmp(token_table[i]->operator, "LTORG") || !strcmp(token_table[i]->operator, "END"))
 		{
+			for (int j = lit_index; j < lit_index + lit_cnt; j++)
+			{
+				strcpy(liter, lit_table[j].literal);
+				ptr = strtok(liter, "'");
 
+				if (!strcmp(ptr, "C"))
+				{
+					ptr = strtok(NULL, "'");
+
+					for (int k = 0; ptr[k] != NULL; k++)
+					{
+						sprintf(object_codes[obj_index], "%s%02X", object_codes[obj_index], ptr[k]);
+					}
+					obj_index++;
+				}
+				else if (!strcmp(ptr, "X"))
+				{
+					ptr = strtok(NULL, "'");
+					sprintf(object_codes[obj_index], "%s", ptr);
+					obj_index++;
+				}
+			}
+			lit_index += lit_cnt;
+			lit_cnt = 0;
 		}
-		else if (!strcmp(token_table[i]->operator, "BYTE") && !strcmp(token_table[i]->operator, "WORD"))
+		else if (!strcmp(token_table[i]->operator, "BYTE") || !strcmp(token_table[i]->operator, "WORD"))
 		{
+			strcpy(liter, token_table[i]->operand[0]);
+			ptr = strtok(liter, "'");
 
+			if (!strcmp(ptr, "C"))
+			{
+				ptr = strtok(NULL, "'");
+
+				for (int k = 0; ptr[k] != NULL; k++)
+				{
+					sprintf(object_codes[obj_index], "%s%02X", object_codes[obj_index], ptr[k]);
+				}
+				obj_index++;
+			}
+			else if (!strcmp(ptr, "X"))
+			{
+				ptr = strtok(NULL, "'");
+				sprintf(object_codes[obj_index], "%s", ptr);
+				obj_index++;
+			}
+			else
+			{
+				sprintf(object_codes[obj_index], "%06d", 0);
+				obj_index++;
+			}
 		}
 	}
+	for (int i = 0; i < obj_index; i++)
+		printf("%s\n", object_codes[i]);
 }
 
 /* ----------------------------------------------------------------------------------

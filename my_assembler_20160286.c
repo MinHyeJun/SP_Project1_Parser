@@ -1058,6 +1058,7 @@ void make_objectcode_output(char *file_name)
 	int char_len = 0, ref_cnt, op_index, obj_index = 0, wr_code_cnt, lit_cnt = 0;
 	char output[1024] = { 0 };
 	char code_line[1024] = { 0 };
+	_Bool isEnd = 0;
 
 	file = fopen(file_name, "w");
 
@@ -1125,12 +1126,7 @@ void make_objectcode_output(char *file_name)
 		}
 		else if (!strcmp(token_table[i]->operator, "END"))
 		{
-			if (ref_cnt > 0)
-			{
-				printf("<<MODIFICATION>>\n");/////////////
-			}
-
-			sprintf(output, "E");
+			isEnd = 1;
 		}
 		else if ((op_index = search_opcode(token_table[i]->operator)) >= 0)
 		{
@@ -1139,6 +1135,7 @@ void make_objectcode_output(char *file_name)
 
 			for (int j = 0; j + i < token_line; j++)
 			{
+
 				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
 					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
 				{
@@ -1156,6 +1153,15 @@ void make_objectcode_output(char *file_name)
 						}
 						if (k >= lit_index + lit_cnt)
 							lit_cnt++;
+					}
+				}
+				else if (!strcmp(token_table[j + i]->operator, "END"))
+				{
+					isEnd = 1;
+					for (int k = 0; k < lit_num - lit_index; k++)
+					{
+						char_len += strlen(object_codes[j+ k + obj_index]) / 2;
+						wr_code_cnt++;
 					}
 				}
 				else
@@ -1192,6 +1198,7 @@ void make_objectcode_output(char *file_name)
 
 			for (int j = 0; j + i < token_line; j++)
 			{
+
 				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
 					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
 				{
@@ -1211,6 +1218,16 @@ void make_objectcode_output(char *file_name)
 							lit_cnt++;
 					}
 				}
+				else if (!strcmp(token_table[j + i]->operator, "END"))
+				{
+					isEnd = 1;
+
+					for (int k = 0; k < lit_num - lit_index; k++)
+					{
+						char_len += strlen(object_codes[j + k + obj_index]) / 2;
+						wr_code_cnt++;
+					}
+				}
 				else
 					break;
 			}
@@ -1226,11 +1243,27 @@ void make_objectcode_output(char *file_name)
 			obj_index += lit_cnt;
 			lit_cnt = 0;
 		}
+		else if (!strcmp(token_table[i]->operator, "RESW") || !strcmp(token_table[i]->operator, "RESB"))
+		{
+			increase_locctr(token_table[i]);
+			continue;
+		}
 		else
 			continue;
 
 		fprintf(file, "%s\n", output);
 		printf("%s\n", output);
+
+		if (isEnd)
+		{
+			if (ref_cnt > 0)
+			{
+				printf("<<MODIFICATION>>\n");/////////////
+			}
+
+			fprintf(file, "E\n");
+			printf("E\n");
+		}
 	}
 
 	fclose(file);

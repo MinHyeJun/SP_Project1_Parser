@@ -90,8 +90,17 @@ static int lit_num;
 static int lit_index;
 
 char object_codes[MAX_LINES][9];
-char extref[SUBPROG_NUM][20];
+char extref[3][20];
 int end_addr[SUBPROG_NUM];
+
+struct modif_unit {
+	symbol ref_symbol;
+	int op_or_dif;
+};
+
+typedef struct modif_unit modif;
+modif modif_table[20];
+static modif_cnt;
 
 static int locctr;
 static int program_cnt;

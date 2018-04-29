@@ -5,6 +5,7 @@
 #define MAX_INST 256
 #define MAX_LINES 5000
 #define MAX_OPERAND 3
+#define SUBPROG_NUM 3
 
 #define A_REGISTER 0
 #define X_REGISTER 1
@@ -89,6 +90,8 @@ static int lit_num;
 static int lit_index;
 
 char object_codes[MAX_LINES][9];
+char extref[SUBPROG_NUM][20];
+int end_addr[SUBPROG_NUM];
 
 static int locctr;
 static int program_cnt;

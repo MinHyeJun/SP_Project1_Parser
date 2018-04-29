@@ -51,9 +51,8 @@ int main(int args, char *arg[])
 	make_symtab_output("symtab_20160286");
 	
 	assem_pass2();
-	/*
 	make_objectcode_output("output_20160286");
-	*/
+	
 
 	/*
 	* 추후 프로젝트에서 사용되는 부분
@@ -382,7 +381,7 @@ static int assem_pass1(void)
 
 	if (token_table[0] != NULL && !strcmp(token_table[0]->operator,"START"))
 	{
-		locctr = atoi(token_table[0]->operand);
+		locctr = atoi(token_table[0]->operand[0]);
 		sub_prog_num = 0;
 	}
 	else
@@ -396,6 +395,7 @@ static int assem_pass1(void)
 
 		if (!strcmp(token_table[i]->operator, "CSECT"))
 		{
+			end_addr[sub_prog_num] = locctr;
 			locctr = 0;
 			sub_prog_num++;
 		}
@@ -410,6 +410,8 @@ static int assem_pass1(void)
 			insert_addr_littab();
 		}
 	}
+
+	end_addr[sub_prog_num] = locctr;
 
 	return 0;
 }
@@ -601,7 +603,6 @@ void insert_symbol(token * inputToken)
 void insert_literal_littab(char * input_literal)
 {
 	char data[255];
-	char data_type;
 	char *ptr;
 
 	strcpy(data, input_literal);
@@ -791,11 +792,10 @@ static int assem_pass2(void)
 {
 	/* add your code here */
 	short target_addr;
-	int obj_index = 0, op_index, next_index;
+	int obj_index = 0, op_index;
 	int opcode, r1, r2, xbpe;
 	int lit_cnt = 0, ref_cnt;
 	char operand[255], output_addr[9], liter[20], *ptr;
-	char extref[3][20];
 
 	lit_index = 0;
 	sub_prog_num = 0;
@@ -812,14 +812,11 @@ static int assem_pass2(void)
 		{
 			program_cnt = 0;
 			sub_prog_num++;
-			obj_index++;
 		}
 		else if (!strcmp(token_table[i]->operator,"EXTREF"))
 		{
 			for (ref_cnt = 0; token_table[i]->operand[ref_cnt] != NULL; ref_cnt++)
 				strcpy(extref[ref_cnt], token_table[i]->operand[ref_cnt]);
-
-			ref_cnt;
 		}
 
 		if (op_index >= 0)
@@ -913,7 +910,7 @@ static int assem_pass2(void)
 							
 							int k;
 
-							for (k = 0; k < lit_index + lit_cnt; k++)
+							for (k = lit_index; k < lit_index + lit_cnt; k++)
 							{
 								if (!strcmp(lit_table[k].literal, operand + 1))
 									break;
@@ -1040,6 +1037,8 @@ static int assem_pass2(void)
 	}
 	for (int i = 0; i < obj_index; i++)
 		printf("%s\n", object_codes[i]);
+
+	return 0;
 }
 
 /* ----------------------------------------------------------------------------------
@@ -1055,7 +1054,185 @@ static int assem_pass2(void)
 void make_objectcode_output(char *file_name)
 {
 	/* add your code here */
-	
+	FILE * file;
+	int char_len = 0, ref_cnt, op_index, obj_index = 0, wr_code_cnt, lit_cnt = 0;
+	char output[1024] = { 0 };
+	char code_line[1024] = { 0 };
 
+	file = fopen(file_name, "w");
+
+	if (file == NULL)
+		return;
+
+	sub_prog_num = 0;
+	locctr = 0;
+	lit_index = 0;
+
+	for (int i = 0; i < token_line; i++)
+	{
+		if (!strcmp(token_table[i]->operator, "START"))
+		{
+			sprintf(output, "H%s\t%06s%06X", token_table[i]->label, token_table[i]->operand[0], end_addr[sub_prog_num]);
+		}
+		else if (!strcmp(token_table[i]->operator, "CSECT"))
+		{
+			if (ref_cnt > 0)
+			{
+				printf("<<MODIFICATION>>\n");/////////////
+			}
+
+			if (sub_prog_num == 0)
+			{
+				fprintf(file, "E%06s\n\n", token_table[0]->operand[0]);
+				printf("E%06s\n\n", token_table[0]->operand[0]);
+			}
+			else
+			{
+				fprintf(file, "E\n\n");
+				printf("E\n\n");
+			}
+
+			if (!strcmp(token_table[i]->operator, "CSECT"))
+			{
+				locctr = 0;
+				sub_prog_num++;
+
+				sprintf(output, "H%s\t%06X%06X", token_table[i]->label, 0, end_addr[sub_prog_num]);
+			}
+		}
+		else if (!strcmp(token_table[i]->operator, "EXTDEF"))
+		{
+			ref_cnt = 0;
+			sprintf(output, "D%s%06X", token_table[i]->operand[0], search_symbol_address(token_table[i]->operand[0]));
+			ref_cnt++;
+
+			for (int j = 1; token_table[i]->operand[j] != NULL && j < 3; j++)
+			{
+				sprintf(output, "%s%s%06X", output, token_table[i]->operand[j], search_symbol_address(token_table[i]->operand[j]));
+				ref_cnt++;
+			}
+		}
+		else if (!strcmp(token_table[i]->operator, "EXTREF"))
+		{
+			strcpy(extref[0], token_table[i]->operand[0]);
+			sprintf(output, "R%s", token_table[i]->operand[0]);
+
+			for (ref_cnt = 1; token_table[i]->operand[ref_cnt] != NULL; ref_cnt++)
+			{
+				strcpy(extref[ref_cnt], token_table[i]->operand[ref_cnt]);
+				sprintf(output, "%s%s", output, token_table[i]->operand[ref_cnt]);
+			}
+		}
+		else if (!strcmp(token_table[i]->operator, "END"))
+		{
+			if (ref_cnt > 0)
+			{
+				printf("<<MODIFICATION>>\n");/////////////
+			}
+
+			sprintf(output, "E");
+		}
+		else if ((op_index = search_opcode(token_table[i]->operator)) >= 0)
+		{
+			wr_code_cnt = 0;
+			char_len = 0;
+
+			for (int j = 0; j + i < token_line; j++)
+			{
+				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
+					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
+				{
+					char_len += strlen(object_codes[j + obj_index]) / 2;
+					wr_code_cnt++;
+					
+					if (op_index >= 0 && (inst_table[op_index]->oprnd_num >= 1 && search_lit_address(token_table[i + j]->operand[0]) >= 0))
+					{
+						int k;
+
+						for (k = lit_index; k < lit_index + lit_cnt; k++)
+						{
+							if (!strcmp(lit_table[k].literal, token_table[i + j]->operand[0] + 1))
+								break;
+						}
+						if (k >= lit_index + lit_cnt)
+							lit_cnt++;
+					}
+				}
+				else
+					break;
+
+				if (char_len >= 30)
+				{
+					char_len -= strlen(object_codes[j + obj_index]) / 2;
+					wr_code_cnt--;
+					break;
+				}
+			}
+
+			sprintf(output, "T%06X%02X", locctr, char_len);
+
+			for (int j = 0; j < wr_code_cnt; j++)
+			{
+				sprintf(output, "%s%s", output, object_codes[j + obj_index]);
+				increase_locctr(token_table[i + j]);
+			}
+
+			i += wr_code_cnt - 1;
+			obj_index += wr_code_cnt;
+		}
+		else if (!strcmp(token_table[i]->operator, "LTORG"))
+		{
+			wr_code_cnt = 0;
+			char_len = 0;
+
+			for (int j = 0; j < lit_cnt; j++)
+			{
+				char_len += strlen(object_codes[j + obj_index]) / 2;
+			}
+
+			for (int j = 0; j + i < token_line; j++)
+			{
+				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
+					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
+				{
+					char_len += strlen(object_codes[j + obj_index]) / 2;
+					wr_code_cnt++;
+
+					if (inst_table[op_index]->oprnd_num >= 1 && search_lit_address(token_table[i + j]->operand[0]) >= 0)
+					{
+						int k;
+
+						for (k = lit_index; k < lit_index + lit_cnt; k++)
+						{
+							if (!strcmp(lit_table[k].literal, token_table[i + j]->operand[0] + 1))
+								break;
+						}
+						if (k >= lit_index + lit_cnt)
+							lit_cnt++;
+					}
+				}
+				else
+					break;
+			}
+
+			sprintf(output, "T%06X%02X", locctr, char_len);
+
+			for (int j = 0; j < lit_cnt; j++)
+			{
+				sprintf(output, "%s%s", output, object_codes[j + obj_index]);
+				locctr += strlen(object_codes[j + obj_index]) / 2;
+			}
+			lit_index += lit_cnt;
+			obj_index += lit_cnt;
+			lit_cnt = 0;
+		}
+		else
+			continue;
+
+		fprintf(file, "%s\n", output);
+		printf("%s\n", output);
+	}
+
+	fclose(file);
 	freeAll();
 }

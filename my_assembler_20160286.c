@@ -796,6 +796,7 @@ static int assem_pass2(void)
 	int opcode, r1, r2, xbpe;
 	int lit_cnt = 0, ref_cnt;
 	char operand[255], output_addr[9], liter[20], *ptr;
+	char op_sign;
 
 	lit_index = 0;
 	sub_prog_num = 0;
@@ -828,12 +829,11 @@ static int assem_pass2(void)
 			{
 				if (inst_table[op_index]->oprnd_num > 0 && strstr(token_table[i]->operand[0], extref[j]))
 				{
-					strcpy(modif_table[modif_cnt].ref_symbol.symbol, token_table[i]->operand[0]);
+					sprintf(modif_table[modif_cnt].ref_symbol.symbol, "+%s", extref[j]);
 					modif_table[modif_cnt].ref_symbol.addr = locctr+1;
 					modif_table[modif_cnt].program_num = sub_prog_num;
 					modif_table[modif_cnt].op_or_dif = 3;
 					modif_cnt++;
-					break;
 				}
 			}
 
@@ -1027,16 +1027,31 @@ static int assem_pass2(void)
 		{
 			locctr = program_cnt;
 
+			strcpy(operand, token_table[i]->operand[0]);
+			ptr = strtok(operand, "-+/*");
+			op_sign = '+';
 			for (int j = 0; j < ref_cnt; j++)
 			{
-				if (strstr(token_table[i]->operand[0], extref[j]))
+				if (strstr(ptr, extref[j]))
 				{
-					strcpy(modif_table[modif_cnt].ref_symbol.symbol, token_table[i]->operand[0]);
+					
+					sprintf(modif_table[modif_cnt].ref_symbol.symbol, "%c%s", op_sign, ptr);
 					modif_table[modif_cnt].ref_symbol.addr = locctr;
 					modif_table[modif_cnt].program_num = sub_prog_num;
 					modif_table[modif_cnt].op_or_dif = 0;
 					modif_cnt++;
-					break;
+
+					if (strstr(token_table[i]->operand[0], "-"))
+					{
+						op_sign = '-';
+						ptr = strtok(NULL, "-+/*");
+						
+						if (ptr == NULL)
+							break;
+						else
+							j = -1;
+					}
+
 				}
 			}
 
@@ -1128,8 +1143,8 @@ void make_objectcode_output(char *file_name)
 					if (modif_table[j].op_or_dif == 0)
 						byte_num = 6;
 
-					fprintf(file, "M%06X%02X+%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
-					printf("M%06X%02X+%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+					fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+					printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
 				}
 			}
 
@@ -1311,8 +1326,13 @@ void make_objectcode_output(char *file_name)
 			{
 				if (modif_table[j].program_num == sub_prog_num)
 				{
-					fprintf(file, "M%06X+%s\n", modif_table[j].ref_symbol.addr, modif_table[j].ref_symbol.symbol);
-					printf("M%06X+%s\n", modif_table[j].ref_symbol.addr, modif_table[j].ref_symbol.symbol);
+					int byte_num = 5;
+
+					if (modif_table[j].op_or_dif == 0)
+						byte_num = 6;
+
+					fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+					printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
 				}
 			}
 

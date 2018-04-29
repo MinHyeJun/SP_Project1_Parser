@@ -799,6 +799,7 @@ static int assem_pass2(void)
 
 	lit_index = 0;
 	sub_prog_num = 0;
+	locctr = 0;
 
 	for (int i = 1; i < token_line; i++)
 	{
@@ -821,6 +822,21 @@ static int assem_pass2(void)
 
 		if (op_index >= 0)
 		{
+			locctr = program_cnt;
+
+			for (int j = 0; j < ref_cnt; j++)
+			{
+				if (inst_table[op_index]->oprnd_num > 0 && strstr(token_table[i]->operand[0], extref[j]))
+				{
+					strcpy(modif_table[modif_cnt].ref_symbol.symbol, token_table[i]->operand[0]);
+					modif_table[modif_cnt].ref_symbol.addr = locctr+1;
+					modif_table[modif_cnt].program_num = sub_prog_num;
+					modif_table[modif_cnt].op_or_dif = 3;
+					modif_cnt++;
+					break;
+				}
+			}
+
 			for (int j = i + 1; j < token_line; j++)
 			{
 				if (search_opcode(token_table[j]->operator) >= 0
@@ -1009,6 +1025,32 @@ static int assem_pass2(void)
 		}
 		else if (!strcmp(token_table[i]->operator, "BYTE") || !strcmp(token_table[i]->operator, "WORD"))
 		{
+			locctr = program_cnt;
+
+			for (int j = 0; j < ref_cnt; j++)
+			{
+				if (strstr(token_table[i]->operand[0], extref[j]))
+				{
+					strcpy(modif_table[modif_cnt].ref_symbol.symbol, token_table[i]->operand[0]);
+					modif_table[modif_cnt].ref_symbol.addr = locctr;
+					modif_table[modif_cnt].program_num = sub_prog_num;
+					modif_table[modif_cnt].op_or_dif = 0;
+					modif_cnt++;
+					break;
+				}
+			}
+
+			for (int j = i + 1; j < token_line; j++)
+			{
+				if (search_opcode(token_table[j]->operator) >= 0
+					|| (!strcmp(token_table[j]->operator, "RESW")) || (!strcmp(token_table[j]->operator, "RESB"))
+					|| (!strcmp(token_table[j]->operator, "WORD")) || (!strcmp(token_table[j]->operator, "BYTE")))
+				{
+					increase_program_cnt(token_table[i]);
+					break;
+				}
+			}
+
 			strcpy(liter, token_table[i]->operand[0]);
 			ptr = strtok(liter, "'");
 
@@ -1077,9 +1119,18 @@ void make_objectcode_output(char *file_name)
 		}
 		else if (!strcmp(token_table[i]->operator, "CSECT"))
 		{
-			if (ref_cnt > 0)
+			for (int j = 0; j < modif_cnt; j++)
 			{
-				printf("<<MODIFICATION>>\n");/////////////
+				if (modif_table[j].program_num == sub_prog_num)
+				{
+					int byte_num = 5;
+
+					if (modif_table[j].op_or_dif == 0)
+						byte_num = 6;
+
+					fprintf(file, "M%06X%02X+%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+					printf("M%06X%02X+%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+				}
 			}
 
 			if (sub_prog_num == 0)
@@ -1256,9 +1307,13 @@ void make_objectcode_output(char *file_name)
 
 		if (isEnd)
 		{
-			if (ref_cnt > 0)
+			for (int j = 0; j < modif_cnt; j++)
 			{
-				printf("<<MODIFICATION>>\n");/////////////
+				if (modif_table[j].program_num == sub_prog_num)
+				{
+					fprintf(file, "M%06X+%s\n", modif_table[j].ref_symbol.addr, modif_table[j].ref_symbol.symbol);
+					printf("M%06X+%s\n", modif_table[j].ref_symbol.addr, modif_table[j].ref_symbol.symbol);
+				}
 			}
 
 			fprintf(file, "E\n");

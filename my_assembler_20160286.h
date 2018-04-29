@@ -96,11 +96,12 @@ int end_addr[SUBPROG_NUM];
 struct modif_unit {
 	symbol ref_symbol;
 	int op_or_dif;
+	int program_num;
 };
 
 typedef struct modif_unit modif;
 modif modif_table[20];
-static modif_cnt;
+static int modif_cnt;
 
 static int locctr;
 static int program_cnt;

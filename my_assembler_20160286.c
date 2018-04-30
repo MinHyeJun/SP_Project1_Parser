@@ -45,7 +45,7 @@ int main(int args, char *arg[])
 	}
 
 	// 어셈블리 코드의 명령어 Opcode와 함께 파일에 출력
-	make_opcode_output("output_20160286.txt");
+	//make_opcode_output("output_20160286.txt");
 	//make_opcode_output(NULL);
 
 	make_symtab_output("symtab_20160286");
@@ -243,11 +243,13 @@ int token_parsing(char *str)
 		token_table[token_line]->operator = malloc(sizeof(char) * 30);
 		strcpy(token_table[token_line]->operator, line);
 
-		if (op_index >= 0 && inst_table[op_index]->form != 2)
+		// 3형식 또는 4형식을 지원하는 기계어 코드인 경우, 
+		if (op_index >= 0 && inst_table[op_index]->form == 3)
 		{
+			// 4형식 명령어인 경우 nixbpe 중 e 표시
 			if (line[0] == '+')
 				token_table[token_line]->nixbpe |= E_NIXBPE;
-			else
+			else // 아니라면 pc relative를 위해 nixbpe 중 p에 표시
 				token_table[token_line]->nixbpe |= P_NIXBPE;
 		}
 
@@ -279,28 +281,32 @@ int token_parsing(char *str)
 				operand = strtok(NULL, ",");
 			}
 
-			if (op_index >= 0 && inst_table[op_index]->form != 2)
+			//3 또는 4형식을 지원하는 기계어 코드의 명령어의 경우에 따라 nixpbe를 표시
+			if (op_index >= 0 && inst_table[op_index]->form == 3)
 			{
+				// X레지스터를 이용해 루핑을 하는 경우 x 표시
 				if ((token_table[token_line]->operand[1]!= NULL) && (!strcmp(token_table[token_line]->operand[1], "X")))
 				{
 					token_table[token_line]->nixbpe |= X_NIXBPE;
 				}
+				
+				// indirect addressing을 사용하는 경우 n 표시
 				if (strstr(token_table[token_line]->operand[0], "@"))
 				{
 					token_table[token_line]->nixbpe |= N_NIXBPE;
 				}
-				else if (strstr(token_table[token_line]->operand[0], "#"))
+				else if (strstr(token_table[token_line]->operand[0], "#")) // immediate addressing을 사용하는 경우 i표시 및 p 표시 삭제
 				{
 					token_table[token_line]->nixbpe |= I_NIXBPE;
 					token_table[token_line]->nixbpe ^= P_NIXBPE;
 				}
-				else
+				else // 그 외의 경우 simple addressing 모드이므로 n과 i 표시
 				{
 					token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
 				}
 			}
 		}
-		else
+		else  //이 외의 경우 simple addressing 모드 이므로 n과 i 표시
 		{
 			token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
 		}
@@ -317,6 +323,7 @@ int token_parsing(char *str)
 	// 한 라인의 소스코드를 토큰별로 모두 분리했으므로 토큰의 수를 저장하는 token_line의 값을 1 올림
 	token_line++;
 	
+	return 0;
 }
 
 /* ----------------------------------------------------------------------------------
@@ -379,6 +386,8 @@ static int assem_pass1(void)
 		token_parsing(input_data[i]);
 	}
 
+	//첫번째 토큰의 연산자가 START라는 지시어라면 피연산자로 들어온 주소값으로 locctr을 초기화
+	//첫번째 프로그램임을 표시 (sub_prog_num = 0)
 	if (token_table[0] != NULL && !strcmp(token_table[0]->operator,"START"))
 	{
 		locctr = atoi(token_table[0]->operand[0]);
@@ -387,12 +396,16 @@ static int assem_pass1(void)
 	else
 		return -1;
 
+	//첫번째 토큰의 레이블을 심볼 테이블에 저장
+	insert_symbol(token_table[0]);
 
-	insert_symbol(token_table[0]);/////////////////////////////////////////////////////////
-
+	// 토큰을 하나씩 가져와 Pass1 수행
 	for (int i = 1; i < token_line; i++)
 	{
-
+		// 해당 토큰의 연산자가 CSECT라면 새로운 서브루틴의 시작임
+		// 이전 프로그램의 마지막 주소를 배열에 저장
+		// locctr의 값을 0으로 초기화
+		// 프로그램 표시값을 1 올림
 		if (!strcmp(token_table[i]->operator, "CSECT"))
 		{
 			end_addr[sub_prog_num] = locctr;
@@ -400,17 +413,21 @@ static int assem_pass1(void)
 			sub_prog_num++;
 		}
 
-		insert_symbol(token_table[i]);/////////////////////////////////////////////////////////
+		// 레이블 정보가 있는 토큰인 경우 심볼을 테이블에 저장하도록 함
+		insert_symbol(token_table[i]);
 
+		// 피연산자로 리터럴이 들어온 경우, 리터럴 정보를 테이블에 저장하도록 함
 		if (token_table[i]->operand[0] != NULL && strstr(token_table[i]->operand[0], "="))
 			insert_literal_littab(token_table[i]->operand[0]);
 
+		//읽어들인 명령어의 연산자가 LTORG나 END 지시어라면 리터럴 주소를 리터럴 테이블에 저장
 		if (!strcmp(token_table[i]->operator, "LTORG") || !strcmp(token_table[i]->operator,"END"))
 		{
 			insert_addr_littab();
 		}
 	}
 
+	// 마지막 서브 루틴 프로그램의 끝 주소를 저장
 	end_addr[sub_prog_num] = locctr;
 
 	return 0;
@@ -454,7 +471,7 @@ void make_opcode_output(char *file_name)
 		if (file == NULL) // 파일을 열 수 없다면 표준 출력 후 함수를 끝냄
 		{
 			printf("해당 이름의 파일을 작성할 수 없습니다.");
-			return 0;
+			return;
 		}
 	}
 	
@@ -559,10 +576,12 @@ void freeAll(void) {
 * ------------------------- 추후 프로젝트에서 사용할 함수 --------------------------*
 * --------------------------------------------------------------------------------*/
 
+// 심볼 테이블의 정보를 파일에 출력하는 함수
 void make_symtab_output(char *fileName)
 {
 	FILE * file;
 
+	// 인자의 문자열을 이름으로 한 파일을 쓰기용으로 오픈
 	file = fopen(fileName, "w");
 
 	if (file == NULL)
@@ -570,65 +589,80 @@ void make_symtab_output(char *fileName)
 		return;
 	}
 
+	// 심볼 테이블에 저장된 심볼 이름과 주소를 출력
 	for (int i = 0; i < sym_num; i++)
 	{
 		fprintf(file, "%s\t%X\n", sym_table[i].symbol, sym_table[i].addr);
-		printf("%s\t%X\n", sym_table[i].symbol, sym_table[i].addr);
+		//printf("%s\t%X\n", sym_table[i].symbol, sym_table[i].addr);
 	}
 }
 
+// 인자로 받은 토큰에서 레이블 정보를 심볼 테이블에 심볼 이름으로 넣는 함수
 void insert_symbol(token * inputToken)
 {
-	int op_index = -1;
+	int op_index = -1; 
 
+	// 토큰의 레이블 정보가 있는 경우 저장할 심볼이 있다고 파악
 	if (inputToken->label != NULL)
 	{
+		// 레이블을 심볼 테이블에 이름으로 저장
 		strcpy(sym_table[sym_num].symbol, inputToken->label);
 
+		// 토큰의 명령어 연산자가 EQU 지시어라면 주소값으로 피연산자 값을 넣어야 함
 		if (!strcmp(inputToken->operator, "EQU"))
 		{
+			// 피연산자가 *인 경우 현재 locctr의 값을 주소로 저장
 			if (!strcmp(inputToken->operand[0], "*"))
 				sym_table[sym_num].addr = locctr;
-			else
-				sym_table[sym_num].addr = operate_address(inputToken->operand[0]); /////////////////////////////////////
+			else  // 그렇지 않은 경우 피연산자를 통해 주소값을 계산하여 저장
+				sym_table[sym_num].addr = operate_address(inputToken->operand[0]);
 		}
-		else
+		else  // 그 외의 경우 현재 주소값을 심볼 주소값으로 저장
 			sym_table[sym_num].addr = locctr;
-		sym_num++;
+
+		sym_num++; // 하나를 온전하게 저장했으므로 저장 수를 1 올림 
 	}
 
-	increase_locctr(inputToken);
+	increase_locctr(inputToken);  // 현재 locctr를 증가시킴
 }
 
+// 인자로 받은 리터럴을 리터럴 테이블에 넣는 함수
 void insert_literal_littab(char * input_literal)
 {
 	char data[255];
 	char *ptr;
 
+	// 문자열 분리를 위해 리터럴 정보를 임시로 복사함
 	strcpy(data, input_literal);
 
+	// 리터럴 정보에 첫번째 문자로 = 이 포함된 경우 이를 없앰
 	if (data[0] == '=')
 		ptr = strtok(data, "=");
 
+	// 이전에 저장된 리터럴인지 확인
 	for (int i = lit_index; i < lit_num; i++)
 	{
 		if (!strcmp(lit_table[i].literal, ptr))
 			return;
 	}
-
+	
+	//새로운 리터럴이라면 리터럴 테이블에 저장
 	strcpy(lit_table[lit_num].literal, ptr);
 
-	lit_num++;
+	lit_num++;  // 리터럴 개수를 1 올림
 }
 
+// 피연산자에 연산이 포함된 경우 주소를 계산하여 반환하는 함수
 int operate_address(char * input_operand)
 {
 	char expression[1024];
 	char * symbol;
 	int result = -1;
 
+	// 계산할 피연산자 정보를 임시로 복사
 	strcpy(expression, input_operand);
 
+	// - 연산이 있는 경우, 해당 심볼의 주소값을 가져와 - 연산 수행
 	if (strstr(expression, "-"))
 	{
 		symbol = strtok(expression, "-");
@@ -637,70 +671,89 @@ int operate_address(char * input_operand)
 		result -= search_symbol_address(symbol);
 	}
 
+	// 계산된 주소값 반환
 	return result;
 }
 
-// 중복되는 심볼이 있을 경우 어느 프로그램 내에 있는 심볼을 가져올 것인지 파악해서 가져오는 코드 필요
+// 인자로 받은 심볼 이름을 가지고 테이블에서 주소값을 찾아 반환하는 함수
 int search_symbol_address(char * symbol)
 {
+	// 프로그램 구분을 위한 변수
 	int program_num = 0;
 
+	// 인자로 받은 심볼에 @ 표시가 있다면 이를 없애줌
 	if (symbol[0] == '@')
 		symbol++;
 
+	// 심볼 테이블에서 인자로 받은 심볼과 이름이 일치하는 심볼의 주소값을 반환
 	for (int i = 0; i < sym_num; i++)
 	{
+		// 찾는 도중 심볼 테이블의 주소값이 0으로 바뀌었다면 새로운 프로그램의 시작이므로
+		// 프로그램을 구분하는 변수의 값을 하나 올림
 		if (i != 0 && i != 1 && sym_table[i].addr == 0)
 			program_num++;
 
+		// 현재 서브 루틴 프로그램의 정보와 해당 심볼이 정의된 프로그램의 정보가 일치하고,
+		// 심볼 이름이 일치하다면 주소값 반환
 		if (sub_prog_num == program_num && !strcmp(sym_table[i].symbol, symbol))
 			return sym_table[i].addr;
 	}
 
+	// 찾지 못한 경우 에러의 표시로 -1 반환
 	return -1;
 }
 
+// 리터럴 테이블에서 인자로 받은 리터럴의 주소값을 반환하는 함수
 int search_lit_address(char * literal)
 {
+	// 인자로 받은 리터럴 정보에 =이 포함된 경우 이를 없앰
 	if (literal[0] == '=')
 		literal++;
 
+	//리터럴 테이블에서 리터럴 이름이 일치하는 경우의 주소값을 반환
 	for (int i = 0; i < lit_num; i++)
 		if (!strcmp(lit_table[i].literal, literal))
 			return lit_table[i].addr;
 
+	// 찾지 못한 경우 에러의 표시로 -1 반환
 	return -1;
 }
 
+// 인자로 받은 토큰의 정보를 가지고 locctr의 값을 증가시키는 함수
 void increase_locctr(token * inputToken)
 {
+	// 인자로 들어온 토큰의 연산자가 기계어코드인 경우 해당 기계어 코드의 인덱스를 구함
 	int op_index = search_opcode(inputToken->operator);
 
+	// 인덱스를 구한 경우(기계어 코드인 경우)
 	if (op_index >= 0)
 	{
+		// 해당 기계어 코드가 지원하는 형식만큼 locctr를 증가
 		locctr += inst_table[op_index]->form;
 
+		// 연산자에 +가 들어간 4형식인 경우 locctr의 값을 하나 더 증가시킴
 		if (strstr(inputToken->operator, "+") && inst_table[op_index]->form == 3)
 			locctr++;
 	}
-	else if (!strcmp(inputToken->operator, "RESW"))
+	else if (!strcmp(inputToken->operator, "RESW")) // 토큰의 연산자가 RESW 지시어인 경우 크기를 나타내는 피연산자 값*3 만큼 증가
 	{
 		locctr += atoi(inputToken->operand[0]) * 3;
 	}
-	else if (!strcmp(inputToken->operator, "RESB"))
+	else if (!strcmp(inputToken->operator, "RESB"))  // 토큰의 연산자가 RESB 지시어인 경우 크기를 나타내는 피연산자 값만큼 증가
 	{
 		locctr += atoi(inputToken->operand[0]);
 	}
-	else if (!strcmp(inputToken->operator, "BYTE"))
+	else if (!strcmp(inputToken->operator, "BYTE"))  // 토큰의 연산자가 BTYE 지시어인 경우 1 증가 (1byte)
 	{
 		locctr++;
 	}
-	else if (!strcmp(inputToken->operator, "WORD"))
+	else if (!strcmp(inputToken->operator, "WORD"))  // 토큰의 연산자가 WORD 지시어인 경우 3 증가 (3byte)
 	{
 		locctr += 3;
 	}
 }
 
+// PC 값을 증가시키는 함수 (위 locctr을 증가시키는 함수와 동작방식 동일)
 void increase_program_cnt(token * inputToken)
 {
 	int op_index = search_opcode(inputToken->operator);
@@ -730,46 +783,61 @@ void increase_program_cnt(token * inputToken)
 	}
 }
 
+// 리터럴 테이블에 적절한 주소값을 넣는 함수
+// 리터럴 정보는 = 문자가 없는 사앹로 들어옴
 void insert_addr_littab(void)
 {
+	// lit_input: 해당 인덱스의 리터럴을 임시로 저장하기 위한 문자열
+	// lit_type: X, C 등의 데이터 타입 정보를 저장하기 위한 변수
+	// lit_data: 리터럴 문자열을 분리하여 데이터 부분만을 가리키기 위한 포인터 변수
 	char lit_input[20];
 	char lit_type;
 	char *lit_data;
 
+	// 이전에 주소를 넣은 인덱스 이후부터 현재까지 저장된 인덱스까지 주소값을 넣기 시작
 	for (int i = lit_index; i < lit_num; i++)
 	{
+		// 현재 주소를 해당 리터럴 주소로 저장하고
+		// 해당 리터럴의 타입을 저장 후
+		// 데이터 부분만을 문자열 분리로 포인트 지정
 		lit_table[i].addr = locctr;
 		strcpy(lit_input, lit_table[i].literal);
 		lit_type = lit_input[0];
 		lit_data = strtok(lit_input, "'");
 		lit_data = strtok(NULL, "'");
 
+		// 리터럴 타입이 C(char)인 경우, 데이터 길이만큼 locctr 값 증가
 		if (lit_type == 'C')
 		{
 			locctr += strlen(lit_data);
 		}
-		else if (lit_type == 'X')
+		else if (lit_type == 'X') // X(16진수 데이터)인 경우, locttr 값 1 증가
 		{
 			locctr++;
 		}
 	}
-
+	// 현재까지 저장된 인덱스까지 모두 주소를 저장했으므로 lit_index 값 현재 인덱스 값으로 변경
 	lit_index = lit_num;
 }
 
+// short 형의 주소 값을 배열 형태로 바꾸는 함수
 void address_to_array(short address, char * arr, int arr_num)
 {
+	//short 형의 주소 값을 문자열 형태로 임시 담아두는 배열
 	char temp[9];
 
+	// 주소 값이 마이너스인 경우
 	if (address < 0)
 	{
+		//16진수로 temp에 문자열 출력 후 필요한 만큼만 arr 배열에 담는다
+		// FFFFFA -> FFA(3자리만 필요한 경우)
 		sprintf(temp, "%0X", address);
 		for (int i = 0; i < arr_num+1; i++)
 		{
 			arr[i] = temp[strlen(temp) - arr_num + i];
 		}
 	}
-	else
+	else // 주소값이 0 이상인 경우 필요한 자리수 만큼 arr에 문자열 출력
 	{
 		if(arr_num == 3)
 			sprintf(arr, "%03X", address);
@@ -791,6 +859,15 @@ void address_to_array(short address, char * arr, int arr_num)
 static int assem_pass2(void)
 {
 	/* add your code here */
+	// target_addr: 현재 명령어의 피연산자 주소
+	// obj_index: 오브젝트 코드 테이블의 인덱스를 표현하는 변수/ op_index: inst_table상의 인덱스를 표현하는 변수
+	// opcode: 해당 기계어 코드의 16진수로 표현된 OPCODE를 담는 변수 
+	// r1, r2: 레지스터 연산인 경우 피연산자로 들어온 레지스터의 번호를 담기위한 변수
+	// xbpe: xbpe의 값을 10진수 형의 수로 저장하는 변수
+	// lit_cnt: 리터럴 카운터 / ref_cnt: 참조 심볼 카운터
+	// operand: 피연산자를 임시로 저장하는 문자열 / output_addr: 출력할 주소값을 담는 문자열
+	// liter: 리터럴 데이터를 임시로 저장하기 위한 문자열 / ptr: 리터럴의 데이터 부분만을 지정하기 위한 포인터
+	// op_sign: 피연산자로 식이 들어온 경우 사용하는 연산자를 담기 위한 문자 변수
 	short target_addr;
 	int obj_index = 0, op_index;
 	int opcode, r1, r2, xbpe;
@@ -798,37 +875,50 @@ static int assem_pass2(void)
 	char operand[255], output_addr[9], liter[20], *ptr;
 	char op_sign;
 
+	// 리터럴 테이블 인덱스, 프로그램 구분, locctr 초기화
 	lit_index = 0;
 	sub_prog_num = 0;
 	locctr = 0;
 
+	// 토큰별로 하나씩 오브젝트 코드를 생성함
 	for (int i = 1; i < token_line; i++)
 	{
+		// 오브젝트 코드를 만들기 전, 부수 변수들을 초기화
+		// inst_table 상의 연산자 인덱스 값 구함
 		ptr = NULL;
 		r1 = r2 = 0;
 		xbpe = 0;
 		target_addr = 0;
 		op_index = search_opcode(token_table[i]->operator);
 
+		// 명령어의 연산자가 CSECT 지시어인 경우,
+		// pc를 0으로 초기화하고 프로그램 구분 값을 1 올림(다음 프로그램)
 		if (!strcmp(token_table[i]->operator,"CSECT"))
 		{
 			program_cnt = 0;
 			sub_prog_num++;
 		}
+		// 명령어의 연산자가 EXTREF 지시어인 경우,
+		// 참조 심볼을 담는 extref 배열에 참조 심볼 이름을 담음
 		else if (!strcmp(token_table[i]->operator,"EXTREF"))
 		{
 			for (ref_cnt = 0; token_table[i]->operand[ref_cnt] != NULL; ref_cnt++)
 				strcpy(extref[ref_cnt], token_table[i]->operand[ref_cnt]);
 		}
-
+		// 명령어의 연산자가 기계어 코드인 경우,
 		if (op_index >= 0)
 		{
+			// 이전의 PC를 locctr로 지정
 			locctr = program_cnt;
 
+			// 명령어의 피연산자로 참조심볼이 들어온 경우
+			// 후에 Modification record 작성을 위해
+			// modif_table에 수정을 시작할 주소와 프로그램 구분값,
+			// 명령어 시작주소로부터 고쳐야할 부분이 얼만큼 떨어져 있는지 저장
 			for (int j = 0; j < ref_cnt; j++)
 			{
 				if (inst_table[op_index]->oprnd_num > 0 && strstr(token_table[i]->operand[0], extref[j]))
-				{
+				{ 
 					sprintf(modif_table[modif_cnt].ref_symbol.symbol, "+%s", extref[j]);
 					modif_table[modif_cnt].ref_symbol.addr = locctr+1;
 					modif_table[modif_cnt].program_num = sub_prog_num;
@@ -836,7 +926,9 @@ static int assem_pass2(void)
 					modif_cnt++;
 				}
 			}
-
+			
+			// 다음 명령어 주소(PC) 값을 구하기 위해
+			// 가장 가까운 메모리를 차지하는 명령어를 찾아 pc 값을 증가시킴
 			for (int j = i + 1; j < token_line; j++)
 			{
 				if (search_opcode(token_table[j]->operator) >= 0
@@ -847,13 +939,16 @@ static int assem_pass2(void)
 					break;
 				}
 			}
+			// 기계어 코드의 16진수 형태의 OPCODE를 opcode에 저장
 			opcode = strtol(inst_table[op_index]->opcode, NULL, 16);
 
+			//2형식을 지원하는 기계어 코드(레지스터 연산자)인 경우
 			if (inst_table[op_index]->form == 2)
 			{
-
+				// 해당 기계어코드가 1개의 피연산자를 지원하는 경우
 				if (inst_table[op_index]->oprnd_num == 1)
 				{
+					// 첫번째 피연산자의 레지스터에 종류에 따라 해당 레지스터 번호를 r1에 저장
 					if (!strcmp(token_table[i]->operand[0], "A"))
 						r1 = A_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "X"))
@@ -864,10 +959,11 @@ static int assem_pass2(void)
 						r1 = S_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "T"))
 						r1 = T_REGISTER;
-
 				}
+				// 해당 기계어코드가 2개의 피연산자를 지원하는 경우
 				else if (inst_table[op_index]->oprnd_num == 2)
 				{
+					// 첫번째 피연산자의 레지스터에 종류에 따라 해당 레지스터 번호를 r1에 저장
 					if (!strcmp(token_table[i]->operand[0], "A"))
 						r1 = A_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "X"))
@@ -878,7 +974,7 @@ static int assem_pass2(void)
 						r1 = S_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "T"))
 						r1 = T_REGISTER;
-
+					// 두번째 피연산자의 레지스터에 종류에 따라 해당 레지스터 번호를 r2에 저장
 					if (!strcmp(token_table[i]->operand[1], "A"))
 						r2 = A_REGISTER;
 					else if (!strcmp(token_table[i]->operand[1], "X"))
@@ -890,42 +986,49 @@ static int assem_pass2(void)
 					else if (!strcmp(token_table[i]->operand[1], "T"))
 						r2 = T_REGISTER;
 				}
-
+				// opcode, 레지스터 번호들을 조합하여 오브젝트 코드로 배열에 저장
 				sprintf(object_codes[obj_index], "%02X%d%d", opcode, r1, r2);
 				obj_index++;
 			}
-			else
+			else // 2형식을 지원하는 기계어 코드가 아닌 경우
 			{
+				// 기계어 코드가 가질 수 있는 피연산자 개수가 1개인 경우
 				if (inst_table[op_index]->oprnd_num == 1)
 				{
+					// 피연산자 임시 저장
 					strcpy(operand, token_table[i]->operand[0]);
+					// 피연산자 첫번째 문자가 #(immediate addressing)인 경우
+					// #을 제외한 숫자값을 타겟 주소로 지정
 					if (operand[0] == '#')
 					{
 						ptr = strtok(operand, "#");
 						target_addr = atoi(ptr);
 					}
-					else
+					else // 그 외의 경우
 					{
+						// 참조 심볼을 피연산자로 쓰는지 확인
 						int j;
 						for (j = 0; j < ref_cnt; j++)
 						{
 							if (extref[j] != NULL && !strcmp(operand, extref[j]))
 								break;
 						}
+						// 참조 심볼을 피연산자로 쓰는 경우 타겟 주소를 0으로 지정
 						if (j < ref_cnt)
 						{
 							target_addr = 0;
 						}
+						// 피연산자가 심볼인 경우, 심볼 테이블에 저장된 주소를 타겟 주소로 지정
 						else if (search_symbol_address(operand) >= 0)
 						{
 							target_addr = search_symbol_address(operand);
 						}
+						// 피연산자가 리터럴인 경우, 리터럴 테이블에 저장된 주소를 타겟 주소로 지정
 						else if (search_lit_address(operand) >= 0)
 						{
 							target_addr = search_lit_address(operand);
 							
 							int k;
-
 							for (k = lit_index; k < lit_index + lit_cnt; k++)
 							{
 								if (!strcmp(lit_table[k].literal, operand + 1))
@@ -934,46 +1037,52 @@ static int assem_pass2(void)
 							if (k >= lit_index + lit_cnt)
 								lit_cnt++;
 						}
+						// 그 외의 경우 주소의 값을 모두 0으로 지정
 						else
 							target_addr = 0;
 					}
 
+					// 토큰의 nixbpe 중 n이 1인 경우, 출력할 opcode 부분에 2 더함
 					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
 					{
 						opcode += 2;
 					}
-
+					// 토큰의 nixbpe 중 i이 1인 경우, 출력할 opcode 부분에 1 더함
 					if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
 					{
 						opcode++;
 					}
-
+					// 토큰의 nixbpe 중 x이 1인 경우, 출력할 xbpe 부분에 8 더함
 					if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
 					{
 						xbpe += 8;
 					}
-
+					// 토큰의 nixbpe 중 b이 1인 경우, 출력할 xbpe 부분에 4 더함
 					if ((token_table[i]->nixbpe & B_NIXBPE) == B_NIXBPE)
 					{
 						xbpe += 4;
 					}
-
+					// 토큰의 nixbpe 중 p이 1인 경우, 출력할 xbpe 부분에 2 더함
+					// PC relative이므로 타겟 주소에서 PC 주소 값을 뺌
 					if ((token_table[i]->nixbpe & P_NIXBPE) == P_NIXBPE)
 					{
 						xbpe += 2;
 						target_addr -= program_cnt;
 					}
-
+					// 토큰의 nixbpe 중 e이 1인 경우, 출력할 xbpe 부분에 1 더함
+					// 주소표현 비트 수가 늘어난 4형식이므로 주소 표현 자리수를 5로 하여 주소값을 배열로 표현함
 					if ((token_table[i]->nixbpe & E_NIXBPE) == E_NIXBPE)
 					{
 						xbpe += 1;
 						address_to_array(target_addr, output_addr, 5);
 					}
+					// 3형식이므로 주소 표현 자리수를 3으로 하여 주소값을 배열로 표현함
 					else
 						address_to_array(target_addr, output_addr, 3);
 				}
-				else
+				else // 기계어 코드가 가질 수 있는 피연산자 개수가 1개가 아닌 경우(0개)
 				{
+					// nixbpe 중 n,i,x가 표시되어있는 경우 위와 같이 opcode나 xbpe에 적절히 더함
 					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
 					{
 						opcode += 2;
@@ -991,18 +1100,24 @@ static int assem_pass2(void)
 
 					address_to_array(target_addr, output_addr, 3);
 				}
-
+				
+				// 오브젝트 코드를 배열에 넣어줌
 				sprintf(object_codes[obj_index], "%02X%X%s", opcode, xbpe, output_addr);
 				obj_index++;
 			}
 		}
+		// 현재 명령어의 연산자가 LTORG나 END인 경우 리터럴에 대한 오브젝트 코드 생성
 		else if (!strcmp(token_table[i]->operator, "LTORG") || !strcmp(token_table[i]->operator, "END"))
 		{
+			// 이전에 오브젝트 코드로 작성된 리터럴 이후부터
+			// 현재까지 나온 리터럴 수만큼 오브젝트 코드 생성
+			// 오브젝트 코드는 리터럴 이름으로 저장된 리터럴 데이터를 16진수로 표현하여 저장
 			for (int j = lit_index; j < lit_index + lit_cnt; j++)
 			{
 				strcpy(liter, lit_table[j].literal);
 				ptr = strtok(liter, "'");
 
+				// 리터럴 데이터가 C(char) 타입인 경우
 				if (!strcmp(ptr, "C"))
 				{
 					ptr = strtok(NULL, "'");
@@ -1013,6 +1128,7 @@ static int assem_pass2(void)
 					}
 					obj_index++;
 				}
+				// 리터럴 데이터가 X(16진수 수) 타입인 경우
 				else if (!strcmp(ptr, "X"))
 				{
 					ptr = strtok(NULL, "'");
@@ -1020,13 +1136,17 @@ static int assem_pass2(void)
 					obj_index++;
 				}
 			}
+			//현재까지 오브젝트 코드로 만든 lit_index를 저장함
 			lit_index += lit_cnt;
 			lit_cnt = 0;
 		}
+		// 명령어의 연산자가 "BYTE"나 "WORD"라면
 		else if (!strcmp(token_table[i]->operator, "BYTE") || !strcmp(token_table[i]->operator, "WORD"))
 		{
 			locctr = program_cnt;
-
+			
+			// 피연산자의 주소값으로 심볼간의 표현식으로 들어온 경우,
+			// 심볼의 주소값을 구한 후 식을 계산함
 			strcpy(operand, token_table[i]->operand[0]);
 			ptr = strtok(operand, "-+/*");
 			op_sign = '+';
@@ -1051,10 +1171,10 @@ static int assem_pass2(void)
 						else
 							j = -1;
 					}
-
 				}
 			}
 
+			//PC 값을 구함
 			for (int j = i + 1; j < token_line; j++)
 			{
 				if (search_opcode(token_table[j]->operator) >= 0
@@ -1066,6 +1186,7 @@ static int assem_pass2(void)
 				}
 			}
 
+			// 상수 피연산자의 데이터값만을 가지고 16진수로 변환하여 오브젝트 코드 생성
 			strcpy(liter, token_table[i]->operand[0]);
 			ptr = strtok(liter, "'");
 
@@ -1092,9 +1213,6 @@ static int assem_pass2(void)
 			}
 		}
 	}
-	for (int i = 0; i < obj_index; i++)
-		printf("%s\n", object_codes[i]);
-
 	return 0;
 }
 
@@ -1111,29 +1229,46 @@ static int assem_pass2(void)
 void make_objectcode_output(char *file_name)
 {
 	/* add your code here */
+	// file: 파일을 쓰기 위한 파일 포인터
+	// char_len: 파일에 쓰일 오브젝트 코드의 바이트 수를 세는 변수
+	// ref_cnt: 프로그램 상단에 정의하는 또는 참조 받는 심볼의 수
+	// op_index: 해당 명령어의 기계어 코드 인덱스
+	// wr_code_cnt: 한 라인에 쓰인 오브젝트 코드의 수
+	// lit_cnt: 한 프로그램 상에서 쓰인 리터럴의 수
+	// output: 한 라인씩 출력할 문자열을 담음
+	// isEnd: END 지시어를 만나 끝나는 상태임을 표시
 	FILE * file;
 	int char_len = 0, ref_cnt, op_index, obj_index = 0, wr_code_cnt, lit_cnt = 0;
 	char output[1024] = { 0 };
-	char code_line[1024] = { 0 };
 	_Bool isEnd = 0;
 
+	// 인자로 받은 파일 이름으로 쓰기용으로 파일을 열기
 	file = fopen(file_name, "w");
 
 	if (file == NULL)
 		return;
-
+	
+	// 부가적으로 쓰기 위한 변수들 초기화
 	sub_prog_num = 0;
 	locctr = 0;
 	lit_index = 0;
 
+	// 토큰 테이블에서 하나씩 읽어와 작성함
 	for (int i = 0; i < token_line; i++)
 	{
+		// START 지시어가 있는 명령어인 경우
 		if (!strcmp(token_table[i]->operator, "START"))
 		{
+			// Header record를 문자열 output에 작성
 			sprintf(output, "H%s\t%06s%06X", token_table[i]->label, token_table[i]->operand[0], end_addr[sub_prog_num]);
 		}
+		// CSECT 지시어가 있는 명령어인 경우
+		// 새로운 섹션 프로그램의 시작을 표시하는 것이므로
+		// 이전 프로그램의 modification record와 end record를 출력한 후
+		// 새로운 섹션 프로그램의 header record 출력
 		else if (!strcmp(token_table[i]->operator, "CSECT"))
 		{
+			// 이전 프로그램의 modirication record 출력
 			for (int j = 0; j < modif_cnt; j++)
 			{
 				if (modif_table[j].program_num == sub_prog_num)
@@ -1144,31 +1279,29 @@ void make_objectcode_output(char *file_name)
 						byte_num = 6;
 
 					fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
-					printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
 				}
 			}
 
+			// 이전 프로그램이 첫번째 프로그램이었다면 end rocord와 함께 명령어 시작 주소도 같이 출력
 			if (sub_prog_num == 0)
 			{
 				fprintf(file, "E%06s\n\n", token_table[0]->operand[0]);
-				printf("E%06s\n\n", token_table[0]->operand[0]);
 			}
-			else
+			else // 그외 프로그램이라면 end record만 출력
 			{
 				fprintf(file, "E\n\n");
-				printf("E\n\n");
 			}
 
-			if (!strcmp(token_table[i]->operator, "CSECT"))
-			{
-				locctr = 0;
-				sub_prog_num++;
-
-				sprintf(output, "H%s\t%06X%06X", token_table[i]->label, 0, end_addr[sub_prog_num]);
-			}
+			// 새로운 프로그램이 시작됐으므로 locctr를 초기화 하고 프로그램 구분 변수를 1 올림
+			locctr = 0;
+			sub_prog_num++;
+			// 새 프로그램의 header record를 output에 작성
+			sprintf(output, "H%s\t%06X%06X", token_table[i]->label, 0, end_addr[sub_prog_num]);
 		}
+		// EXTDEF 지시어가 있는 명령어인 경우
 		else if (!strcmp(token_table[i]->operator, "EXTDEF"))
 		{
+			// define record output에 작성
 			ref_cnt = 0;
 			sprintf(output, "D%s%06X", token_table[i]->operand[0], search_symbol_address(token_table[i]->operand[0]));
 			ref_cnt++;
@@ -1179,8 +1312,10 @@ void make_objectcode_output(char *file_name)
 				ref_cnt++;
 			}
 		}
+		//EXTREF 지시어가 있는 명령어인 경우
 		else if (!strcmp(token_table[i]->operator, "EXTREF"))
 		{
+			// refer record output에 작성
 			strcpy(extref[0], token_table[i]->operand[0]);
 			sprintf(output, "R%s", token_table[i]->operand[0]);
 
@@ -1190,24 +1325,28 @@ void make_objectcode_output(char *file_name)
 				sprintf(output, "%s%s", output, token_table[i]->operand[ref_cnt]);
 			}
 		}
+		// END 지시어가 있는 명령어인 경우 프로그램이 끝났음을 표시
 		else if (!strcmp(token_table[i]->operator, "END"))
 		{
 			isEnd = 1;
 		}
+		// 기계어 코드 연산자가 포함된 명령어인 경우
 		else if ((op_index = search_opcode(token_table[i]->operator)) >= 0)
 		{
 			wr_code_cnt = 0;
 			char_len = 0;
 
+			// 한 라인에 쓸 오브젝트 코드의 바이트 수와 오브젝트 코드의 수를 셈
 			for (int j = 0; j + i < token_line; j++)
 			{
-
+				// 메모리상에서 공간을 차지하는 명령어인 경우(오브젝트 코드로 변환된 명령어인 경우)의 수를 셈
 				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
 					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
 				{
 					char_len += strlen(object_codes[j + obj_index]) / 2;
 					wr_code_cnt++;
 					
+					// 만약 해당 명령어에 리터럴이 포함되어 있다면 리터럴의 수도 셈
 					if (op_index >= 0 && (inst_table[op_index]->oprnd_num >= 1 && search_lit_address(token_table[i + j]->operand[0]) >= 0))
 					{
 						int k;
@@ -1221,6 +1360,7 @@ void make_objectcode_output(char *file_name)
 							lit_cnt++;
 					}
 				}
+				// 혹은 END 지시어를 만날 경우 프로그램 종료를 표시한 후 출력하지 못한 남은 리터럴도 포함하여 개수를 셈
 				else if (!strcmp(token_table[j + i]->operator, "END"))
 				{
 					isEnd = 1;
@@ -1230,9 +1370,10 @@ void make_objectcode_output(char *file_name)
 						wr_code_cnt++;
 					}
 				}
-				else
+				else // 그 이외의 명령어를 만나면 더이상 수를 세지 않음
 					break;
 
+				// 출력할 바이트의 수가 30을 넘어간 경우 30을 넘기 전 오브젝트코드까지만 세고 멈춤
 				if (char_len >= 30)
 				{
 					char_len -= strlen(object_codes[j + obj_index]) / 2;
@@ -1241,27 +1382,34 @@ void make_objectcode_output(char *file_name)
 				}
 			}
 
+			// text record 표시와 첫번째 명령어 주소, 앞으로 쓸 오브젝트 코드의 바이트 수를 output에 표시
 			sprintf(output, "T%06X%02X", locctr, char_len);
 
+			// 센 오브젝트 코드 수만큼 output에 담음
 			for (int j = 0; j < wr_code_cnt; j++)
 			{
 				sprintf(output, "%s%s", output, object_codes[j + obj_index]);
 				increase_locctr(token_table[i + j]);
 			}
 
+			// 작성한 수 만큼 토큰 수를 세는 i와 obj_index의 값을 올림
 			i += wr_code_cnt - 1;
 			obj_index += wr_code_cnt;
 		}
+		// LTORG 지시어가 있는 명령어인 경우
 		else if (!strcmp(token_table[i]->operator, "LTORG"))
 		{
 			wr_code_cnt = 0;
 			char_len = 0;
 
+			// 해당 명령어에서 명시된 리터럴 수만큼 출력할 바이트 수를 셈
 			for (int j = 0; j < lit_cnt; j++)
 			{
 				char_len += strlen(object_codes[j + obj_index]) / 2;
 			}
 
+			// 이후 리터럴이 아닌 메모리를 차지하는 명령어가 나올수도 있으므로
+			// 위와 동일한 방식으로 오브젝트 코드의 바이트 수와 출력할 오브젝트 코드 수를 셈
 			for (int j = 0; j + i < token_line; j++)
 			{
 
@@ -1298,8 +1446,10 @@ void make_objectcode_output(char *file_name)
 					break;
 			}
 
+			// text record output에 작성
 			sprintf(output, "T%06X%02X", locctr, char_len);
 
+			// 리터럴 오브젝트 코드 output에 출력
 			for (int j = 0; j < lit_cnt; j++)
 			{
 				sprintf(output, "%s%s", output, object_codes[j + obj_index]);
@@ -1309,6 +1459,7 @@ void make_objectcode_output(char *file_name)
 			obj_index += lit_cnt;
 			lit_cnt = 0;
 		}
+		// RESW나 RESB 지시어가 연산자인 명령어인 경우 locctr 값만 증가시킴
 		else if (!strcmp(token_table[i]->operator, "RESW") || !strcmp(token_table[i]->operator, "RESB"))
 		{
 			increase_locctr(token_table[i]);
@@ -1317,9 +1468,13 @@ void make_objectcode_output(char *file_name)
 		else
 			continue;
 
+		//이제까지 출력하기 위해 작성했던 문자열 output을 파일에 출력
 		fprintf(file, "%s\n", output);
-		printf("%s\n", output);
+		//printf("%s\n", output);
 
+		// 프로그램이 종료되는 경우
+		// 마지막 프로그램의 modification record를 출력
+		// end record 출력
 		if (isEnd)
 		{
 			for (int j = 0; j < modif_cnt; j++)
@@ -1332,12 +1487,10 @@ void make_objectcode_output(char *file_name)
 						byte_num = 6;
 
 					fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
-					printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
 				}
 			}
 
 			fprintf(file, "E\n");
-			printf("E\n");
 		}
 	}
 

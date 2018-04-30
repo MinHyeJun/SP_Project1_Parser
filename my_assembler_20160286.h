@@ -75,24 +75,27 @@ struct symbol_unit {
 };
 
 typedef struct symbol_unit symbol;
-symbol sym_table[MAX_LINES];
+symbol sym_table[MAX_LINES];  // 심볼 이름과 주소를 저장할 테이블
+static int sym_num;  // 저장된 심볼 수를 저장하는 변수
 
-static int sym_num; ////////
-
+// 리터럴을 관리하는 구조체
+// 이름과 위치로 구성
 struct literal_unit {
 	char literal[20];
 	int addr;
 };
 
 typedef struct literal_unit literal;
-literal lit_table[MAX_LINES];
-static int lit_num;
-static int lit_index;
+literal lit_table[MAX_LINES]; // 리터럴 값과 주소를 저장할 테이블
+static int lit_num;  // 저장된 리터럴 수를 저장하는 변수
+static int lit_index;  // 사용한 리터럴 수를 저장하는 변수
 
-char object_codes[MAX_LINES][9];
-char extref[3][20];
-int end_addr[SUBPROG_NUM];
+char object_codes[MAX_LINES][9];  // 오브젝트 코드를 담는 배열
+char extref[3][20];  // 참조 선언한 심볼을 관리하는 테이블
+int end_addr[SUBPROG_NUM];  // 각 섹션의 마지막 명령어 주소를 저장하는 배열
 
+// 참조하는 심볼의 정보를 modification record를 위해 저장하는 구조체
+// 해당 참조 심볼 이름, 참조하는 주소, 명령어 형태, 참조하는 서브 프로그램 구분 저장
 struct modif_unit {
 	symbol ref_symbol;
 	int op_or_dif;
@@ -103,9 +106,9 @@ typedef struct modif_unit modif;
 modif modif_table[20];
 static int modif_cnt;
 
-static int locctr;
-static int program_cnt;
-static int sub_prog_num;
+static int locctr;  // 현재 명령어의 주소
+static int program_cnt;  // PC레지스터 역할의 변수
+static int sub_prog_num;  // 현재 프로그램 구분을 위한 변수
 
 //--------------
 
@@ -122,15 +125,16 @@ void make_opcode_output(char *file_name);
 void freeAll();
 
 ////////////////////////
-void make_symtab_output(char *file_name);
-void insert_symbol(token *inputToken);
-int operate_address(char * input_operand);
-int search_symbol_address(char * symbol);
-int search_lit_address(char * literal);
-void insert_literal_littab(char * input_literal);
-void increase_locctr(token * inputToken);
-void insert_addr_littab(void);
-void address_to_array(short address, char * arr, int arr_num);
+void make_symtab_output(char *file_name);  // 심볼 테이블을 만드는 함수
+void insert_symbol(token *inputToken);  // 심볼 테이블에 심볼을 넣는 함수
+int operate_address(char * input_operand); // 심볼 테이블에 넣을 주소를 계산하는 함수
+int search_symbol_address(char * symbol);  // 심볼을 통해 해당 심볼의 주소를 구하는 함수
+int search_lit_address(char * literal);  // 리터럴을 통해 해당 리터럴의 주소를 구하는 함수
+void insert_literal_littab(char * input_literal);  // 리터럴 테이블에 리터럴을 넣는 함수
+void increase_locctr(token * inputToken);  // location counter를 증가시키는 함수
+void increase_program_cnt(token * inputToken); // pc 값을 증가시키는 함수
+void insert_addr_littab(void);  // 리터럴 테이블에 주소를 넣는 함수
+void address_to_array(short address, char * arr, int arr_num);  // short형의 주소를 배열로 바꾸는 함수
 
 /* 추후 프로젝트에서 사용하게 되는 함수*/
 static int assem_pass2(void);

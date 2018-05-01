@@ -91,7 +91,7 @@ static int lit_num;  // 저장된 리터럴 수를 저장하는 변수
 static int lit_index;  // 사용한 리터럴 수를 저장하는 변수
 
 char object_codes[MAX_LINES][9];  // 오브젝트 코드를 담는 배열
-char extref[3][20];  // 참조 선언한 심볼을 관리하는 테이블
+char extref[3][20];  // 참조 선언한 심볼을 관리하는 배열
 int end_addr[SUBPROG_NUM];  // 각 섹션의 마지막 명령어 주소를 저장하는 배열
 
 // 참조하는 심볼의 정보를 modification record를 위해 저장하는 구조체

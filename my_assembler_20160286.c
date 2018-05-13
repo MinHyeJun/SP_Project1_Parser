@@ -306,7 +306,7 @@ int token_parsing(char *str)
 				}
 			}
 		}
-		else  //이 외의 경우 simple addressing 모드 이므로 n과 i 표시
+		else if (op_index >= 0 && inst_table[op_index]->form == 3)  // 피연산자가 없는 3형식 명령어인 경우 simple addressing 모드 이므로 n과 i 표시
 		{
 			token_table[token_line]->nixbpe |= N_NIXBPE + I_NIXBPE;
 		}
@@ -906,7 +906,7 @@ static int assem_pass2(void)
 				strcpy(extref[ref_cnt], token_table[i]->operand[ref_cnt]);
 		}
 		// 명령어인 경우,
-		if (op_index >= 0)
+		else if (op_index >= 0)
 		{
 			// 이전의 PC를 locctr로 지정
 			locctr = program_cnt;
@@ -922,23 +922,14 @@ static int assem_pass2(void)
 					sprintf(modif_table[modif_cnt].ref_symbol.symbol, "+%s", extref[j]);
 					modif_table[modif_cnt].ref_symbol.addr = locctr+1;
 					modif_table[modif_cnt].program_num = sub_prog_num;
-					modif_table[modif_cnt].op_or_dif = 3;
+					modif_table[modif_cnt].modif_size = 5;
 					modif_cnt++;
 				}
 			}
 			
-			// 다음 명령어 주소(PC) 값을 구하기 위해
-			// 가장 가까운 메모리를 차지하는 명령어를 찾아 pc 값을 증가시킴
-			for (int j = i + 1; j < token_line; j++)
-			{
-				if (search_opcode(token_table[j]->operator) >= 0
-					|| (!strcmp(token_table[j]->operator, "RESW")) || (!strcmp(token_table[j]->operator, "RESB"))
-					|| (!strcmp(token_table[j]->operator, "WORD")) || (!strcmp(token_table[j]->operator, "BYTE")))
-				{
-					increase_program_cnt(token_table[i]);
-					break;
-				}
-			}
+			//  pc 값을 증가시킴
+			increase_program_cnt(token_table[i]);
+
 			// 명령어의 16진수 형태의 OPCODE를 opcode에 저장
 			opcode = strtol(inst_table[op_index]->opcode, NULL, 16);
 
@@ -959,6 +950,8 @@ static int assem_pass2(void)
 						r1 = S_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "T"))
 						r1 = T_REGISTER;
+
+					r2 = 0;
 				}
 				// 해당 명령어가 2개의 피연산자를 지원하는 경우
 				else if (inst_table[op_index]->oprnd_num == 2)
@@ -974,6 +967,7 @@ static int assem_pass2(void)
 						r1 = S_REGISTER;
 					else if (!strcmp(token_table[i]->operand[0], "T"))
 						r1 = T_REGISTER;
+
 					// 두번째 피연산자의 레지스터에 종류에 따라 해당 레지스터 번호를 r2에 저장
 					if (!strcmp(token_table[i]->operand[1], "A"))
 						r2 = A_REGISTER;
@@ -990,7 +984,7 @@ static int assem_pass2(void)
 				sprintf(object_codes[obj_index], "%02X%d%d", opcode, r1, r2);
 				obj_index++;
 			}
-			else // 2형식을 지원하는 명령어가 아닌 경우
+			else if (inst_table[op_index]->form == 3)// 3 또는 4형식을 지원하는 명령어인 경우
 			{
 				// 연산자가 가질 수 있는 피연산자 개수가 1개인 경우
 				if (inst_table[op_index]->oprnd_num == 1)
@@ -1018,7 +1012,7 @@ static int assem_pass2(void)
 						{
 							target_addr = 0;
 						}
-						// 피연산자가 심볼인 경우, 심볼 테이블에 저장된 주소를 타겟 주소로 지정
+						// 피연산자가 일반 심볼인 경우, 심볼 테이블에 저장된 주소를 타겟 주소로 지정
 						else if (search_symbol_address(operand) >= 0)
 						{
 							target_addr = search_symbol_address(operand);
@@ -1045,35 +1039,35 @@ static int assem_pass2(void)
 					// 토큰의 nixbpe 중 n이 1인 경우, 출력할 opcode 부분에 2 더함
 					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
 					{
-						opcode += 2;
+						opcode += N_NIXBPE / I_NIXBPE;
 					}
 					// 토큰의 nixbpe 중 i이 1인 경우, 출력할 opcode 부분에 1 더함
 					if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
 					{
-						opcode++;
+						opcode += I_NIXBPE / I_NIXBPE;
 					}
 					// 토큰의 nixbpe 중 x이 1인 경우, 출력할 xbpe 부분에 8 더함
 					if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
 					{
-						xbpe += 8;
+						xbpe += X_NIXBPE;
 					}
 					// 토큰의 nixbpe 중 b이 1인 경우, 출력할 xbpe 부분에 4 더함
 					if ((token_table[i]->nixbpe & B_NIXBPE) == B_NIXBPE)
 					{
-						xbpe += 4;
+						xbpe += B_NIXBPE;
 					}
 					// 토큰의 nixbpe 중 p이 1인 경우, 출력할 xbpe 부분에 2 더함
 					// PC relative이므로 타겟 주소에서 PC 주소 값을 뺌
 					if ((token_table[i]->nixbpe & P_NIXBPE) == P_NIXBPE)
 					{
-						xbpe += 2;
+						xbpe += P_NIXBPE;
 						target_addr -= program_cnt;
 					}
 					// 토큰의 nixbpe 중 e이 1인 경우, 출력할 xbpe 부분에 1 더함
 					// 주소표현 비트 수가 늘어난 4형식이므로 주소 표현 자리수를 5로 하여 주소값을 배열로 표현함
 					if ((token_table[i]->nixbpe & E_NIXBPE) == E_NIXBPE)
 					{
-						xbpe += 1;
+						xbpe += E_NIXBPE;
 						address_to_array(target_addr, output_addr, 5);
 					}
 					// 3형식이므로 주소 표현 자리수를 3으로 하여 주소값을 배열로 표현함
@@ -1085,18 +1079,20 @@ static int assem_pass2(void)
 					// nixbpe 중 n,i,x가 표시되어있는 경우 위와 같이 opcode나 xbpe에 적절히 더함
 					if ((token_table[i]->nixbpe & N_NIXBPE) == N_NIXBPE)
 					{
-						opcode += 2;
+						opcode += N_NIXBPE / I_NIXBPE;
 					}
 
 					if ((token_table[i]->nixbpe & I_NIXBPE) == I_NIXBPE)
 					{
-						opcode++;
+						opcode += I_NIXBPE / I_NIXBPE;
 					}
 
 					if ((token_table[i]->nixbpe & X_NIXBPE) == X_NIXBPE)
 					{
-						xbpe += 8;
+						xbpe += X_NIXBPE;
 					}
+					
+					target_addr = 0;
 
 					address_to_array(target_addr, output_addr, 3);
 				}
@@ -1145,7 +1141,7 @@ static int assem_pass2(void)
 		{
 			locctr = program_cnt;
 			
-			// 피연산자의 주소값으로 심볼간의 표현식으로 들어온 경우,
+			// 피연산자의 주소값으로 심볼간의 연산식으로 들어온 경우,
 			// 심볼의 주소값을 구한 후 식을 계산함
 			strcpy(operand, token_table[i]->operand[0]);
 			ptr = strtok(operand, "-+/*");
@@ -1158,7 +1154,7 @@ static int assem_pass2(void)
 					sprintf(modif_table[modif_cnt].ref_symbol.symbol, "%c%s", op_sign, ptr);
 					modif_table[modif_cnt].ref_symbol.addr = locctr;
 					modif_table[modif_cnt].program_num = sub_prog_num;
-					modif_table[modif_cnt].op_or_dif = 0;
+					modif_table[modif_cnt].modif_size = 6;
 					modif_cnt++;
 
 					if (strstr(token_table[i]->operand[0], "-"))
@@ -1175,16 +1171,7 @@ static int assem_pass2(void)
 			}
 
 			//PC 값을 구함
-			for (int j = i + 1; j < token_line; j++)
-			{
-				if (search_opcode(token_table[j]->operator) >= 0
-					|| (!strcmp(token_table[j]->operator, "RESW")) || (!strcmp(token_table[j]->operator, "RESB"))
-					|| (!strcmp(token_table[j]->operator, "WORD")) || (!strcmp(token_table[j]->operator, "BYTE")))
-				{
-					increase_program_cnt(token_table[i]);
-					break;
-				}
-			}
+			increase_program_cnt(token_table[i]);
 
 			// 상수 피연산자의 데이터값만을 가지고 16진수로 변환하여 오브젝트 코드 생성
 			strcpy(liter, token_table[i]->operand[0]);
@@ -1281,15 +1268,11 @@ void make_objectcode_output(char *file_name)
 			{
 				if (modif_table[j].program_num == sub_prog_num)
 				{
-					int byte_num = 5;
-
-					if (modif_table[j].op_or_dif == 0)
-						byte_num = 6;
 
 					if(isFile)
-						fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+						fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, modif_table[j].modif_size, modif_table[j].ref_symbol.symbol);
 					else
-						printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+						printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, modif_table[j].modif_size, modif_table[j].ref_symbol.symbol);
 
 				}
 			}
@@ -1320,6 +1303,7 @@ void make_objectcode_output(char *file_name)
 		else if (!strcmp(token_table[i]->operator, "EXTDEF"))
 		{
 			// define record output에 작성
+			// 정의한 심볼과 심볼 주소 출력
 			ref_cnt = 0;
 			sprintf(output, "D%s%06X", token_table[i]->operand[0], search_symbol_address(token_table[i]->operand[0]));
 			ref_cnt++;
@@ -1334,6 +1318,7 @@ void make_objectcode_output(char *file_name)
 		else if (!strcmp(token_table[i]->operator, "EXTREF"))
 		{
 			// refer record output에 작성
+			// 참조하는 심볼들을 출력
 			strcpy(extref[0], token_table[i]->operand[0]);
 			sprintf(output, "R%s", token_table[i]->operand[0]);
 
@@ -1426,44 +1411,6 @@ void make_objectcode_output(char *file_name)
 				char_len += strlen(object_codes[j + obj_index]) / 2;
 			}
 
-			// 이후 리터럴이 아닌 메모리를 차지하는 명령어가 나올수도 있으므로
-			// 위와 동일한 방식으로 오브젝트 코드의 바이트 수와 출력할 오브젝트 코드 수를 셈
-			for (int j = 0; j + i < token_line; j++)
-			{
-
-				if ((op_index = search_opcode(token_table[j + i]->operator)) >= 0
-					|| !strcmp(token_table[j + i]->operator, "BYTE") || !strcmp(token_table[j + i]->operator, "WORD"))
-				{
-					char_len += strlen(object_codes[j + obj_index]) / 2;
-					wr_code_cnt++;
-
-					if (inst_table[op_index]->oprnd_num >= 1 && search_lit_address(token_table[i + j]->operand[0]) >= 0)
-					{
-						int k;
-
-						for (k = lit_index; k < lit_index + lit_cnt; k++)
-						{
-							if (!strcmp(lit_table[k].literal, token_table[i + j]->operand[0] + 1))
-								break;
-						}
-						if (k >= lit_index + lit_cnt)
-							lit_cnt++;
-					}
-				}
-				else if (!strcmp(token_table[j + i]->operator, "END"))
-				{
-					isEnd = 1;
-
-					for (int k = 0; k < lit_num - lit_index; k++)
-					{
-						char_len += strlen(object_codes[j + k + obj_index]) / 2;
-						wr_code_cnt++;
-					}
-				}
-				else
-					break;
-			}
-
 			// text record output에 작성
 			sprintf(output, "T%06X%02X", locctr, char_len);
 
@@ -1501,15 +1448,10 @@ void make_objectcode_output(char *file_name)
 			{
 				if (modif_table[j].program_num == sub_prog_num)
 				{
-					int byte_num = 5;
-
-					if (modif_table[j].op_or_dif == 0)
-						byte_num = 6;
-
 					if(isFile)
-						fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+						fprintf(file, "M%06X%02X%s\n", modif_table[j].ref_symbol.addr, modif_table[j].modif_size, modif_table[j].ref_symbol.symbol);
 					else
-						printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, byte_num, modif_table[j].ref_symbol.symbol);
+						printf("M%06X%02X%s\n", modif_table[j].ref_symbol.addr, modif_table[j].modif_size, modif_table[j].ref_symbol.symbol);
 				}
 			}
 

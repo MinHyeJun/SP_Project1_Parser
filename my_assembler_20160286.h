@@ -98,7 +98,7 @@ int end_addr[SUBPROG_NUM];  // 각 섹션의 마지막 명령어 주소를 저장하는 배열
 // 해당 참조 심볼 이름, 참조하는 주소, 명령어 형태, 참조하는 서브 프로그램 구분 저장
 struct modif_unit {
 	symbol ref_symbol;
-	int op_or_dif;
+	int modif_size;
 	int program_num;
 };
 
